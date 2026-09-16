@@ -3,9 +3,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import yaml
+
+# Two physical adapters are supported. "obd2" is a generic ELM327/CAN dongle
+# (standard OBD-II PIDs + UDS-on-CAN for newer vehicles). "kkl" is a classic
+# K-line cable (e.g. a "VAG-COM 409.1"-style KKL cable): no CAN, 5-baud init
+# only, talking either KWP2000 (ISO 14230) or the older VAG-proprietary
+# KW1281 block protocol depending on the ECU.
+INTERFACES = ("obd2", "kkl")
+
+# Per-ECU protocol: which of the three diagnostic "languages" above to speak.
+# uds_can needs interface "obd2"; the other two need interface "kkl".
+PROTOCOLS = ("uds_can", "kwp2000_kline", "kw1281")
 
 
 @dataclass
@@ -40,10 +51,16 @@ class ParameterDef:
 @dataclass
 class EcuProfile:
     name: str
-    tx_header: str
-    rx_header: Optional[str] = None
+    tx_header: str  # CAN header (uds_can) or 5-baud init ECU address (kwp2000_kline / kw1281), e.g. "01"
+    rx_header: Optional[str] = None  # uds_can only; kwp2000_kline/kw1281 don't use a separate rx address
+    protocol: str = "uds_can"
     actuators: List[ActuatorDef] = field(default_factory=list)
     parameters: List[ParameterDef] = field(default_factory=list)
+    # kw1281 only: maps a function name to the KW1281 block title byte to use for it
+    # (e.g. {"read_fault_codes": 0x07, "clear_fault_codes": 0x05}). Block titles are
+    # ECU/model-year specific — confirm them against documentation you legitimately
+    # hold before filling this in; nothing here is guessed or assumed correct.
+    kw1281_blocks: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -62,6 +79,7 @@ class VehicleProfile:
 
 @dataclass
 class AppConfig:
+    interface: str = "obd2"  # "obd2" (ELM327/CAN) or "kkl" (K-line VAG cable)
     port: str = "/dev/ttyUSB0"
     baudrate: int = 38400
     max_speed_kmh: float = 0.0
@@ -109,13 +127,19 @@ def load_vehicle_profile(path: Union[str, Path]) -> VehicleProfile:
             )
             for p in ecu_data.get("parameters", [])
         ]
+        protocol = ecu_data.get("protocol", "uds_can")
+        if protocol not in PROTOCOLS:
+            raise ValueError(f"Unknown protocol '{protocol}' for ECU '{ecu_data['name']}' (expected one of {PROTOCOLS})")
+        kw1281_blocks = {k: _parse_int(v) for k, v in ecu_data.get("blocks", {}).items()}
         ecus.append(
             EcuProfile(
                 name=ecu_data["name"],
                 tx_header=str(ecu_data["tx_header"]),
                 rx_header=ecu_data.get("rx_header"),
+                protocol=protocol,
                 actuators=actuators,
                 parameters=parameters,
+                kw1281_blocks=kw1281_blocks,
             )
         )
     return VehicleProfile(make=data["make"], model=data["model"], year=int(data["year"]), ecus=ecus)
@@ -125,4 +149,11 @@ def load_app_config(path: Union[str, Path]) -> AppConfig:
     if not Path(path).exists():
         return AppConfig()
     data = yaml.safe_load(Path(path).read_text()) or {}
-    return AppConfig(**{**AppConfig().__dict__, **data})
+    config = AppConfig(**{**AppConfig().__dict__, **data})
+    if config.interface not in INTERFACES:
+        raise ValueError(f"Unknown interface '{config.interface}' (expected one of {INTERFACES})")
+    return config
+
+
+def save_app_config(config: AppConfig, path: Union[str, Path]) -> None:
+    Path(path).write_text(yaml.safe_dump(config.__dict__, sort_keys=False, allow_unicode=True))

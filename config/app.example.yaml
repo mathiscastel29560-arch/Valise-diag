@@ -1,8 +1,14 @@
 # Copiez ce fichier vers config/app.yaml puis adaptez-le.
+#
+# Vous avez deux lecteurs : basculez entre eux avec `interface`, ou avec
+# `--interface obd2` / `--interface kkl` en ligne de commande (utile pour
+# passer de l'un à l'autre sans modifier le fichier). Le menu Paramètres
+# permet aussi de changer ce réglage (effectif au prochain démarrage).
 
-port: "/dev/ttyUSB0"        # ou /dev/serial0 pour un module ELM327 relié au GPIO UART
-baudrate: 38400
-max_speed_kmh: 0             # tests actionneurs / écritures refusés au-dessus de cette vitesse
-require_confirmation: true   # demande une confirmation explicite avant toute action sensible
+interface: "obd2"            # "obd2" = ELM327/CAN générique | "kkl" = câble K-line type VAG-COM 409.1
+port: "/dev/ttyUSB0"          # ou /dev/serial0 pour un adaptateur relié au GPIO UART
+baudrate: 38400                # baud ELM327 (interface obd2) ou baud K-line post-init (interface kkl, souvent 9600 ou 10400)
+max_speed_kmh: 0               # tests actionneurs / écritures refusés au-dessus de cette vitesse
+require_confirmation: true     # demande une confirmation explicite avant toute action sensible
 simulate: false
 vehicle_profile_path: "config/vehicle_profile.yaml"

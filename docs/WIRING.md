@@ -1,6 +1,13 @@
 # Câblage matériel
 
-## Adaptateur OBD
+## Deux lecteurs, une seule valise
+
+Le logiciel bascule entre les deux via `interface: obd2|kkl` dans
+`config/app.yaml` (ou `--interface` en ligne de commande / onglet
+Paramètres). Ne branchez qu'un seul câble à la fois sur le port OBD-II du
+véhicule.
+
+## Interface OBD2 (ELM327/CAN)
 
 Deux options :
 
@@ -18,6 +25,18 @@ Pour un usage sérieux de l'UDS (tests actionneurs, écriture de paramètres), u
 adaptateur basé sur une puce **STN11xx** gère nettement mieux le CAN Auto
 Formatting (`AT CAF1`) et le multi-frame ISO-TP que les clones ELM327 bas de
 gamme, qui décrochent parfois sur les réponses longues.
+
+## Interface KKL (câble K-line type VAG-COM 409.1)
+
+Un câble KKL classique embarque une puce USB-série (FTDI/PL2303/CH340) reliée
+à un transceiver K-line — pas de CAN, pas de fast-init : uniquement l'init
+5-baud gérée par `kkl.py`. Branchez-le en USB sur le Pi (`port:
+"/dev/ttyUSB0"` en général ; vérifiez avec `dmesg` après branchement, le nom
+peut varier si les deux adaptateurs sont branchés en même temps).
+
+Le débit de liaison après l'initialisation (`baudrate` dans `config/app.yaml`)
+dépend de l'ECU : 10400 bauds est courant pour KWP2000, certains ECU KW1281
+utilisent 9600. Si l'initialisation échoue (timeout), essayez l'autre valeur.
 
 ## Alimentation du Raspberry Pi Zero
 

@@ -15,7 +15,9 @@ model: "Exemple"
 year: 2015
 
 ecus:
-  - name: "moteur"
+  # --- Interface OBD2 (ELM327/CAN) --- véhicules récents, tous constructeurs.
+  - name: "moteur_can"
+    protocol: "uds_can"
     tx_header: "7E0"   # adresse CAN d'émission vers l'ECU moteur (exemple ISO 15765-4 11 bits)
     rx_header: "7E8"   # adresse CAN de réponse de l'ECU moteur
 
@@ -43,3 +45,46 @@ ecus:
         max_value: 40
         requires_engine_off: false
         requires_stationary: true
+
+  # --- Interface KKL (câble K-line type VAG-COM 409.1) --- ECU VAG ~2000-2006,
+  # protocole KWP2000 : mêmes notions (DID -> "identifiant local" 1 octet) que
+  # ci-dessus mais sur K-line. tx_header est ici l'adresse d'initialisation
+  # 5-baud de l'ECU (ex. 0x01 pour le calculateur moteur sur beaucoup de VAG).
+  - name: "moteur_kwp2000"
+    protocol: "kwp2000_kline"
+    tx_header: "01"
+
+    actuators:
+      - name: "electrovanne_epurateur_kkl"
+        description: "EXEMPLE — identifiant local fictif, à remplacer"
+        did: "12"                # identifiant local (1 octet) — À REMPLACER
+        control_parameter: 0x03
+        on_state: "01"
+        off_state: "00"
+        max_duration_s: 2.0
+        requires_engine_off: true
+        requires_stationary: true
+
+    parameters:
+      - name: "avance_allumage_kkl"
+        description: "EXEMPLE — identifiant local fictif, laissé en lecture seule"
+        did: "13"
+        writable: false
+        data_format: "int8"
+        scale: 1.0
+        offset: 0.0
+        unit: "°"
+        requires_engine_off: false
+        requires_stationary: true
+
+  # --- Interface KKL, ECU VAG plus anciens (pré-2000/2004) --- protocole
+  # KW1281 : échanges par blocs numérotés plutôt que par identifiant. Les
+  # numéros de bloc ci-dessous sont des EXEMPLES : confirmez-les avec une
+  # documentation que vous détenez légitimement avant de vous en servir
+  # (voir docs/SECURITE.md et l'onglet Programmation > Doc rapide).
+  - name: "moteur_kw1281"
+    protocol: "kw1281"
+    tx_header: "01"
+    blocks:
+      read_fault_codes: "07"   # EXEMPLE — à confirmer pour votre ECU
+      clear_fault_codes: "05"  # EXEMPLE — à confirmer pour votre ECU

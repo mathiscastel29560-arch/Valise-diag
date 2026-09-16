@@ -35,5 +35,13 @@ actionneurs physiques** (électrovannes, relais, moteurs pas à pas...) et
    `--simulate`.
 7. En cas de doute sur un identifiant ou un comportement, arrêtez-vous et
    vérifiez plutôt que d'essayer "pour voir".
+8. **Interface KKL (câble K-line) : la vitesse du véhicule n'est PAS
+   surveillée automatiquement**, contrairement à l'interface OBD2 (qui la lit
+   en direct). Le logiciel affiche un avertissement avant chaque test
+   actionneur / écriture de paramètre sur cette interface, mais c'est à vous
+   de vérifier que le véhicule est à l'arrêt avant de confirmer.
+9. Sur l'interface KKL, les codes défauts sont affichés en **hexadécimal
+   brut, non décodé** (le décodage précis varie par ECU/constructeur et n'est
+   pas implémenté) : recoupez-les avec une documentation fiable avant d'agir.
 
 Ce logiciel est fourni sans garantie. Vous êtes seul responsable de son usage.

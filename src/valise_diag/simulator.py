@@ -34,9 +34,14 @@ class SimulatedELM327:
         if key in self._responses:
             return self._responses[key]
         # No canned response registered: fabricate a generic positive response
-        # (service_id + 0x40, no data) so simple flows can run without hardware.
-        service_id = int(payload_hex.strip()[:2], 16)
-        data = bytes([service_id + 0x40])
+        # so simple flows (read/write/io-control on any DID) can run without
+        # hardware. Echo back whatever the request carried after the service ID
+        # (e.g. the DID) plus two zero padding bytes, so a parameter read has
+        # enough bytes to decode instead of crashing on an empty payload.
+        request = bytes.fromhex(payload_hex)
+        service_id = request[0]
+        echoed = request[1:]
+        data = bytes([service_id + 0x40]) + echoed + b"\x00\x00"
         rx_header = f"{(int(self._header, 16) + 8):03X}"
         data_str = " ".join(f"{b:02X}" for b in data)
         return [f"{rx_header} {len(data):02X} {data_str}"]

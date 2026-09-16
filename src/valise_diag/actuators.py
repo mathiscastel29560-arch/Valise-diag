@@ -6,7 +6,10 @@ from typing import Dict, Optional
 
 from .config import EcuProfile
 from .safety import SafetyGuard, VehicleState
-from .uds import IO_RETURN_CONTROL_TO_ECU, UDSClient
+from .uds import IO_RETURN_CONTROL_TO_ECU
+
+# uds_by_ecu holds either UDSClient (CAN) or KWP2000Client (K-line) instances:
+# both expose the same io_control_by_identifier(did, control_parameter, state) method.
 
 
 class ActuatorError(RuntimeError):
@@ -14,7 +17,7 @@ class ActuatorError(RuntimeError):
 
 
 class ActuatorController:
-    def __init__(self, uds_by_ecu: Dict[str, UDSClient], ecus: Dict[str, EcuProfile], guard: SafetyGuard):
+    def __init__(self, uds_by_ecu: Dict[str, object], ecus: Dict[str, EcuProfile], guard: SafetyGuard):
         self._uds_by_ecu = uds_by_ecu
         self._ecus = ecus
         self._guard = guard
