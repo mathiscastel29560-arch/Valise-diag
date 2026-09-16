@@ -55,7 +55,7 @@ echo
 echo "=== Paquets système ==="
 sudo apt-get update
 sudo apt-get install -y python3-venv python3-pip python3-dev build-essential \
-    git nano w3m network-manager kbd
+    git nano w3m network-manager kbd nmap
 
 # 3. Environnement Python
 echo "=== Environnement Python ==="
@@ -114,6 +114,31 @@ sed "s/--autologin pi/--autologin $USER/" "$DEST/systemd/getty-autologin-tty1.co
     | sudo tee /etc/systemd/system/getty@tty1.service.d/override.conf > /dev/null
 sudo systemctl daemon-reload
 echo "-> Autologin sur tty1 configuré pour l'utilisateur $USER."
+
+# 8. Autorise (sans mot de passe) les commandes système utilisées par le menu
+# (extinction, mise à jour, police console, config Wi-Fi, scanner réseau).
+# On résout les vrais chemins des binaires et on valide la syntaxe avec
+# visudo avant d'installer quoi que ce soit dans /etc/sudoers.d — jamais de
+# fichier sudoers non vérifié, une erreur là-dedans peut casser sudo.
+echo "=== Permissions sudo ==="
+SUDOERS_TMP=$(mktemp)
+COMMANDES=""
+for cmd in shutdown apt-get setfont nmtui nmap; do
+    chemin=$(command -v "$cmd" || true)
+    if [ -n "$chemin" ]; then
+        COMMANDES="${COMMANDES:+$COMMANDES, }$chemin"
+    fi
+done
+if [ -n "$COMMANDES" ]; then
+    echo "$USER ALL=(root) NOPASSWD: $COMMANDES" > "$SUDOERS_TMP"
+    if visudo -c -f "$SUDOERS_TMP" >/dev/null 2>&1; then
+        sudo install -m 440 "$SUDOERS_TMP" /etc/sudoers.d/valise-diag
+        echo "-> Commandes système autorisées sans mot de passe pour $USER."
+    else
+        echo "-> Fichier sudoers invalide, ignoré (ces commandes redemanderont le mot de passe)."
+    fi
+fi
+rm -f "$SUDOERS_TMP"
 
 echo
 echo "=== Vérification finale ==="

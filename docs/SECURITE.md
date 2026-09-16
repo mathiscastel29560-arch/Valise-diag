@@ -45,3 +45,24 @@ actionneurs physiques** (électrovannes, relais, moteurs pas à pas...) et
    pas implémenté) : recoupez-les avec une documentation fiable avant d'agir.
 
 Ce logiciel est fourni sans garantie. Vous êtes seul responsable de son usage.
+
+## Scanner réseau (onglet Internet)
+
+Le scanner réseau (`netscan.py`, basé sur `nmap`) est un outil de test
+d'intrusion classique — légitime pour un professionnel de la cybersécurité,
+mais strictement encadré par la loi :
+
+- **N'utilisez-le que sur des réseaux/hôtes que vous êtes explicitement
+  autorisé à tester** : votre propre réseau, un engagement de pentest couvert
+  par une autorisation écrite, un CTF...
+- En France, scanner un système sans autorisation relève de l'article 323-1
+  du code pénal (accès ou maintien frauduleux dans un système de traitement
+  automatisé de données) — des dispositions équivalentes existent dans la
+  plupart des juridictions.
+- Un scan « complet » (tous les ports) ou répété peut être détecté et
+  interprété comme une attaque par les outils de détection du réseau ciblé,
+  même sur un réseau que vous administrez : prévenez les autres personnes
+  concernées si le réseau est partagé.
+- Les rapports de scan (`config/scans/`) peuvent contenir des informations
+  sensibles sur des systèmes tiers : ce dossier est exclu du dépôt Git
+  (`.gitignore`), ne le publiez pas.

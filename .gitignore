@@ -13,3 +13,4 @@ config/vehicle_profile.yaml
 config/historique.log
 config/vehicles/
 config/logs/
+config/scans/

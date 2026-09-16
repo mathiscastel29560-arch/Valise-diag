@@ -36,7 +36,11 @@ onglets :
 - **Programmation** — lecture/écriture de paramètres ECU + doc rapide sur le
   vocabulaire de codage.
 - **Internet** — statut réseau, Wi-Fi (liste/connexion/`nmtui`), ping, test de
-  débit, navigateur texte (`w3m`).
+  débit, navigateur texte (`w3m`), et un **scanner réseau** (`netscan.py`,
+  basé sur `nmap`) : découverte des hôtes, scan de ports rapide/standard/
+  complet/personnalisé avec détection de service, rapports enregistrés dans
+  `config/scans/`. ⚠️ Uniquement sur des réseaux/hôtes que vous êtes autorisé
+  à tester — voir `docs/SECURITE.md`.
 - **Système** — outils Raspberry Pi (shell, console Python, éditeur, infos
   système, mise à jour) : distinct de Programmation, qui ne touche qu'au
   véhicule.
@@ -129,6 +133,7 @@ src/valise_diag/
   boot.py        # écran de démarrage (logo en reveal, scroll de logs, barre de progression)
   coding_doc.py  # doc rapide : vocabulaire de codage/programmation (onglet Programmation)
   netinfo.py     # statut réseau, Wi-Fi, ping, débit, navigation (onglet Internet)
+  netscan.py     # scanner réseau (nmap) : découverte d'hôtes, scan de ports/services
   system_tools.py # shell/Python/éditeur, infos système, maj, police, autostart (onglet Système)
   system_status.py # lecture CPU/température/RAM/disque/Wi-Fi pour le tableau de bord
   pin_lock.py    # verrou par code PIN au démarrage (salé)

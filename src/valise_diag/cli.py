@@ -14,7 +14,21 @@ import tty
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from . import dtc_fr, easter_eggs, games, history, live_data, netinfo, pin_lock, profiles, screensaver, session_log, system_status, system_tools
+from . import (
+    dtc_fr,
+    easter_eggs,
+    games,
+    history,
+    live_data,
+    netinfo,
+    netscan,
+    pin_lock,
+    profiles,
+    screensaver,
+    session_log,
+    system_status,
+    system_tools,
+)
 from .actuators import ActuatorController, ActuatorError
 from .boot import show_boot_screen
 from .coding_doc import afficher_doc_codage
@@ -589,7 +603,8 @@ def _menu_internet() -> None:
             GREEN + " [5] " + RESET + "Ping une adresse",
             GREEN + " [6] " + RESET + "Test de débit",
             GREEN + " [7] " + RESET + "Naviguer",
-            YELLOW + " [8] " + RESET + "Retour",
+            GREEN + " [8] " + RESET + "Scanner réseau",
+            YELLOW + " [9] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -633,6 +648,8 @@ def _menu_internet() -> None:
         elif choice == "7":
             _handle_navigation()
         elif choice == "8":
+            _menu_scanner_reseau()
+        elif choice == "9":
             return
         else:
             print(RED + "Choix invalide." + RESET)
@@ -650,6 +667,135 @@ def _handle_navigation() -> None:
         url = input("URL (sans https://) : ").strip()
         if url:
             netinfo.naviguer(url)
+
+
+def _menu_scanner_reseau() -> None:
+    while True:
+        lignes = boite_titre("SCANNER RESEAU", RED, CYAN) + [
+            "",
+            GREEN + " [1] " + RESET + "Découverte des hôtes (qui est sur le réseau)",
+            GREEN + " [2] " + RESET + "Scan rapide (ports courants)",
+            GREEN + " [3] " + RESET + "Scan standard (ports + services)",
+            GREEN + " [4] " + RESET + "Scan complet (tous les ports, lent)",
+            GREEN + " [5] " + RESET + "Scan personnalisé (ports au choix)",
+            GREEN + " [6] " + RESET + "Consulter les rapports enregistrés",
+            YELLOW + " [7] " + RESET + "Retour",
+            "",
+        ]
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
+        if choice == "1":
+            _handle_decouverte_hotes()
+        elif choice == "2":
+            _handle_scan("Scan rapide", netscan.scan_rapide)
+        elif choice == "3":
+            _handle_scan("Scan standard", netscan.scan_standard)
+        elif choice == "4":
+            _handle_scan(
+                "Scan complet",
+                netscan.scan_complet,
+                avertissement="Peut prendre plusieurs dizaines de minutes sur les 65535 ports.",
+            )
+        elif choice == "5":
+            _handle_scan_personnalise()
+        elif choice == "6":
+            _handle_rapports_scan()
+        elif choice == "7":
+            return
+        else:
+            print(RED + "Choix invalide." + RESET)
+            input("Appuyez sur Entrée pour continuer...")
+
+
+def _handle_decouverte_hotes() -> None:
+    suggestion = netscan.deviner_sous_reseau()
+    invite = f"Sous-réseau à scanner (Entrée pour {suggestion}) : " if suggestion else "Sous-réseau à scanner (ex: 192.168.1.0/24) : "
+    cible = input(invite).strip() or suggestion
+    if not cible:
+        print(RED + "Aucune cible fournie." + RESET)
+        input("Appuyez sur Entrée pour continuer...")
+        return
+    print(CYAN + f"Découverte des hôtes sur {cible} en cours..." + RESET)
+    try:
+        resultat = netscan.decouverte_hotes(cible)
+    except netscan.ErreurScan as exc:
+        print(RED + f"Erreur : {exc}" + RESET)
+        input("Appuyez sur Entrée pour continuer...")
+        return
+    _afficher_resultat_scan(resultat, avec_ports=False)
+
+
+def _handle_scan(titre: str, fonction_scan, avertissement: str = "") -> None:
+    cible = input("Cible (IP, nom d'hôte ou plage, ex: 192.168.1.10) : ").strip()
+    if not cible:
+        print(RED + "Aucune cible fournie." + RESET)
+        input("Appuyez sur Entrée pour continuer...")
+        return
+    if avertissement:
+        print(YELLOW + avertissement + RESET)
+        if not _confirm(f"{titre} sur {cible}"):
+            return
+    print(CYAN + f"{titre} sur {cible} en cours..." + RESET)
+    try:
+        resultat = fonction_scan(cible)
+    except netscan.ErreurScan as exc:
+        print(RED + f"Erreur : {exc}" + RESET)
+        input("Appuyez sur Entrée pour continuer...")
+        return
+    _afficher_resultat_scan(resultat)
+
+
+def _handle_scan_personnalise() -> None:
+    cible = input("Cible (IP ou nom d'hôte) : ").strip()
+    ports = input("Ports (ex: 22,80,443 ou 1-1024) : ").strip()
+    if not cible or not ports:
+        print(RED + "Cible et ports requis." + RESET)
+        input("Appuyez sur Entrée pour continuer...")
+        return
+    print(CYAN + f"Scan de {cible} (ports {ports}) en cours..." + RESET)
+    try:
+        resultat = netscan.scan_personnalise(cible, ports)
+    except netscan.ErreurScan as exc:
+        print(RED + f"Erreur : {exc}" + RESET)
+        input("Appuyez sur Entrée pour continuer...")
+        return
+    _afficher_resultat_scan(resultat)
+
+
+def _afficher_resultat_scan(resultat, avec_ports: bool = True) -> None:
+    print()
+    if not resultat.hotes:
+        print(YELLOW + "Aucun hôte trouvé." + RESET)
+    for hote in resultat.hotes:
+        if hote.etat != "up":
+            continue
+        print(GREEN + f"{hote.ip}" + RESET + (f" ({hote.nom})" if hote.nom else "") + f" — {hote.etat}")
+        if avec_ports:
+            ports_ouverts = [p for p in hote.ports if p.etat == "open"]
+            if not ports_ouverts:
+                print("    (aucun port ouvert parmi ceux scannés)")
+            for port in ports_ouverts:
+                extra = f" — {port.version}" if port.version else ""
+                print(f"    {port.numero}/{port.protocole}  {port.service}{extra}")
+    chemin = netscan.enregistrer_rapport(resultat)
+    history.log_event(f"Scan réseau : {resultat.commande}")
+    print(GREEN + f"\nRapport enregistré dans {chemin}" + RESET)
+    input("\nAppuyez sur Entrée pour continuer...")
+
+
+def _handle_rapports_scan() -> None:
+    rapports = netscan.lister_rapports()
+    if not rapports:
+        print(YELLOW + "Aucun rapport enregistré." + RESET)
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    for i, chemin in enumerate(rapports[:20], start=1):
+        print(f"  [{i}] {chemin.name}")
+    choix = input("Numéro du rapport à afficher (Entrée pour revenir) : ").strip()
+    if choix.isdigit() and 1 <= int(choix) <= len(rapports):
+        print()
+        print(rapports[int(choix) - 1].read_text(encoding="utf-8"))
+        input("\nAppuyez sur Entrée pour continuer...")
 
 
 # --------------------------------------------------------------------------
