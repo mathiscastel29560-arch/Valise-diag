@@ -14,7 +14,7 @@ import tty
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from . import easter_eggs, games, history, live_data, netinfo, pin_lock, screensaver, system_status, system_tools
+from . import dtc_fr, easter_eggs, games, history, live_data, netinfo, pin_lock, profiles, screensaver, session_log, system_status, system_tools
 from .actuators import ActuatorController, ActuatorError
 from .boot import show_boot_screen
 from .coding_doc import afficher_doc_codage
@@ -258,7 +258,8 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             GREEN + " [4] " + RESET + "Tester un actionneur",
             GREEN + " [5] " + RESET + "Identification ECU",
             GREEN + " [6] " + RESET + "Historique des actions",
-            YELLOW + " [7] " + RESET + "Retour",
+            GREEN + " [7] " + RESET + "Enregistrer une session (CSV)",
+            YELLOW + " [8] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -277,6 +278,8 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             elif choice == "6":
                 _handle_history()
             elif choice == "7":
+                _handle_session_log(ctx)
+            elif choice == "8":
                 return
             else:
                 print(RED + "Choix invalide." + RESET)
@@ -296,7 +299,7 @@ def _handle_read_dtc(ctx: _MenuContext) -> None:
             if not dtcs:
                 print("Aucun code défaut.")
             for dtc in dtcs:
-                print(f"{dtc.code}: {dtc.description}")
+                print(f"{dtc.code}: {dtc_fr.decrire(dtc.code, dtc.description)}")
         input("\nAppuyez sur Entrée pour continuer...")
         return
 
@@ -429,6 +432,51 @@ def _handle_history() -> None:
         print(YELLOW + "Aucune action enregistrée." + RESET)
     for ligne in lignes:
         print(GREEN + ligne + RESET)
+    input("\nAppuyez sur Entrée pour continuer...")
+
+
+def _handle_session_log(ctx: _MenuContext) -> None:
+    if ctx.app_config.interface != "obd2":
+        print("Enregistrement de session : disponible uniquement sur l'interface OBD2 pour le moment.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if ctx.obd2 is None:
+        print("Non disponible en mode simulation.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    categories = live_data.categories()
+    print("Quelles valeurs enregistrer ?")
+    for i, categorie in enumerate(categories, start=1):
+        print(f"  [{i}] {categorie}")
+    print(f"  [{len(categories) + 1}] Tout")
+    choix = input(GREEN + "> " + RESET).strip()
+    if choix == str(len(categories) + 1):
+        commandes = live_data.all_commands()
+    elif choix.isdigit() and 1 <= int(choix) <= len(categories):
+        commandes = live_data.commands_for(categories[int(choix) - 1])
+    else:
+        print(RED + "Choix invalide." + RESET)
+        input("Appuyez sur Entrée pour continuer...")
+        return
+
+    try:
+        duree_s = float(input("Durée en secondes (0 = jusqu'à Ctrl+C) : ").strip())
+    except ValueError:
+        print(RED + "Valeur invalide." + RESET)
+        input("Appuyez sur Entrée pour continuer...")
+        return
+
+    print(CYAN + "Enregistrement en cours (Ctrl+C pour arrêter)..." + RESET)
+
+    def afficher_avancement(tick: int) -> None:
+        sys.stdout.write(f"\r  {tick} mesure(s) enregistrée(s)...")
+        sys.stdout.flush()
+
+    chemin = session_log.enregistrer(ctx.obd2, commandes, duree_s, sur_tick=afficher_avancement)
+    print()
+    print(GREEN + f"Session enregistrée dans {chemin}" + RESET)
+    history.log_event(f"Session CSV enregistrée : {chemin}")
     input("\nAppuyez sur Entrée pour continuer...")
 
 
@@ -655,10 +703,7 @@ def _menu_parametres(app_config: AppConfig, app_config_path: str) -> AppConfig:
             else:
                 print(RED + "Valeur invalide." + RESET)
         elif choice == "4":
-            new_path = input("Chemin du profil véhicule : ").strip()
-            if new_path:
-                app_config.vehicle_profile_path = new_path
-                _redemarrage_requis()
+            _menu_profil_vehicule(app_config)
         elif choice == "5":
             value = input("Nouvelle vitesse max (km/h) : ").strip()
             try:
@@ -731,6 +776,47 @@ def _oui_non(valeur: bool) -> str:
 
 def _redemarrage_requis() -> None:
     print(YELLOW + "Redémarrez l'application pour appliquer ce changement." + RESET)
+
+
+def _menu_profil_vehicule(app_config: AppConfig) -> None:
+    while True:
+        profils = profiles.lister_profils()
+        print(f"\nProfil actif : {app_config.vehicle_profile_path}")
+        print("1) Taper un chemin personnalisé")
+        print("2) Choisir parmi les profils enregistrés" + (f" ({len(profils)})" if profils else " (aucun)"))
+        print("3) Enregistrer le profil actif sous un nom")
+        print("4) Retour")
+        choix = input(GREEN + "> " + RESET).strip()
+
+        if choix == "1":
+            new_path = input("Chemin du profil véhicule : ").strip()
+            if new_path:
+                app_config.vehicle_profile_path = new_path
+                _redemarrage_requis()
+        elif choix == "2":
+            if not profils:
+                print(RED + "Aucun profil enregistré (option 3 pour en créer un)." + RESET)
+                continue
+            for i, nom in enumerate(profils, start=1):
+                print(f"  [{i}] {nom}")
+            sous_choix = input("Numéro du profil : ").strip()
+            if sous_choix.isdigit() and 1 <= int(sous_choix) <= len(profils):
+                nom = profils[int(sous_choix) - 1]
+                app_config.vehicle_profile_path = str(profiles.chemin_profil(nom))
+                _redemarrage_requis()
+            else:
+                print(RED + "Choix invalide." + RESET)
+        elif choix == "3":
+            nom = input("Nom à donner à ce profil (ex: Golf de Mathis) : ").strip()
+            try:
+                destination = profiles.enregistrer_profil_actuel(app_config.vehicle_profile_path, nom)
+                print(GREEN + f"Profil enregistré sous {destination}." + RESET)
+            except (profiles.NomProfilInvalide, OSError) as exc:
+                print(RED + f"Erreur : {exc}" + RESET)
+        elif choix == "4":
+            return
+        else:
+            print(RED + "Choix invalide." + RESET)
 
 
 def _gerer_pin(app_config: AppConfig) -> None:

@@ -90,3 +90,13 @@ def format_live_value(value) -> str:
         return str(value)
     unite = _UNITES_COURTES.get(str(value.units), str(value.units))
     return f"{magnitude:g} {unite}".rstrip()
+
+
+def valeur_numerique(value):
+    """Magnitude numérique d'une grandeur Pint renvoyée par python-obd (ou la
+    valeur telle quelle si ce n'en est pas une), pour l'export CSV — voir
+    session_log.py."""
+    if value is None:
+        return None
+    magnitude = getattr(value, "magnitude", None)
+    return magnitude if magnitude is not None else value

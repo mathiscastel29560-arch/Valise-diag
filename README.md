@@ -26,11 +26,13 @@ Le menu se présente comme un tableau de bord (heure, IP, CPU/température/RAM/
 disque/Wi-Fi, style cyberdeck) avec un écran de démarrage animé, organisé en
 onglets :
 
-- **Diagnostic** — codes défauts, lecture temps réel (régime, pression
-  admission/suralimentation, pressions carburant, sondes O2, trims,
-  température huile/catalyseur, tension calculateur... voir
-  `live_data.py`), tests actionneurs, identification ECU, historique des
-  actions effectuées sur le véhicule.
+- **Diagnostic** — codes défauts (avec description en français pour les codes
+  génériques les plus courants, voir `dtc_fr.py`), lecture temps réel (régime,
+  pression admission/suralimentation, pressions carburant, sondes O2, trims,
+  température huile/catalyseur, tension calculateur... voir `live_data.py`),
+  **enregistrement d'une session en CSV** (`session_log.py`, interface OBD2)
+  pour rouvrir un trajet dans un tableur, tests actionneurs, identification
+  ECU, historique des actions effectuées sur le véhicule.
 - **Programmation** — lecture/écriture de paramètres ECU + doc rapide sur le
   vocabulaire de codage.
 - **Internet** — statut réseau, Wi-Fi (liste/connexion/`nmtui`), ping, test de
@@ -38,7 +40,9 @@ onglets :
 - **Système** — outils Raspberry Pi (shell, console Python, éditeur, infos
   système, mise à jour) : distinct de Programmation, qui ne touche qu'au
   véhicule.
-- **Paramètres** — tous les réglages : interface/port/profil véhicule,
+- **Paramètres** — tous les réglages : interface/port, **plusieurs profils
+  véhicule enregistrables** (`profiles.py` — un fichier par véhicule dans
+  `config/vehicles/`, pratique si vous diagnostiquez plusieurs voitures),
   sécurité, apparence (titre, veille, police console), démarrage automatique,
   code PIN.
 - **Jeux** — Pendu, Morpion, Plus ou moins, Serpent (`curses`).
@@ -114,6 +118,10 @@ src/valise_diag/
   kwp1281.py     # client KW1281 (VAG, protocole par blocs) sur K-line
   transport.py   # choisit/construit le bon client selon l'interface + le profil véhicule
   dtc.py         # OBD-II standard (DTC, PIDs temps réel) via python-obd — interface OBD2 uniquement
+  dtc_fr.py      # traduction française des codes défauts génériques les plus courants
+  live_data.py   # catalogue des PID OBD-II temps réel par catégorie
+  session_log.py # enregistrement d'une session temps réel en CSV (interface OBD2)
+  profiles.py    # plusieurs profils véhicule enregistrables (config/vehicles/)
   safety.py      # garde-fous obligatoires avant toute action
   actuators.py   # tests actionneurs, retour de contrôle à l'ECU garanti (UDS et KWP2000)
   parameters.py  # lecture/écriture de paramètres ECU avec vérification (UDS et KWP2000)

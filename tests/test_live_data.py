@@ -1,7 +1,7 @@
 import obd
 
 from valise_diag import live_data
-from valise_diag.dtc import format_live_value
+from valise_diag.dtc import format_live_value, valeur_numerique
 
 
 def test_all_catalogue_commands_exist_in_python_obd():
@@ -27,3 +27,9 @@ def test_format_live_value_formats_known_units_compactly():
 
 def test_format_live_value_falls_back_to_str_for_plain_values():
     assert format_live_value("P0301") == "P0301"
+
+
+def test_valeur_numerique_extracts_magnitude():
+    assert valeur_numerique(42 * obd.Unit.kPa) == 42
+    assert valeur_numerique(None) is None
+    assert valeur_numerique("P0301") == "P0301"
