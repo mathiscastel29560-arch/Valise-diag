@@ -12,14 +12,14 @@ import termios
 import time
 import tty
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
-from . import easter_eggs, games, history, netinfo, pin_lock, screensaver, system_status, system_tools
+from . import easter_eggs, games, history, live_data, netinfo, pin_lock, screensaver, system_status, system_tools
 from .actuators import ActuatorController, ActuatorError
 from .boot import show_boot_screen
 from .coding_doc import afficher_doc_codage
 from .config import AppConfig, INTERFACES, POLICES, VEILLE_TYPES, VehicleProfile, save_app_config
-from .dtc import Obd2Client
+from .dtc import Obd2Client, format_live_value
 from .kwp1281 import KWP1281Client
 from .kwp2000 import SID_CLEAR_DIAGNOSTIC_INFORMATION, SID_READ_DTC_BY_STATUS
 from .parameters import ParameterController, ParameterError
@@ -361,11 +361,42 @@ def _handle_live_data(ctx: _MenuContext) -> None:
     if ctx.app_config.interface != "obd2":
         print("Lecture temps réel : utilisez Programmation > Lire un paramètre ECU "
               "(les valeurs temps réel KKL sont définies comme des paramètres dans le profil véhicule).")
-    elif ctx.obd2 is None:
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if ctx.obd2 is None:
         print("Non disponible en mode simulation.")
-    else:
-        for command in ("RPM", "SPEED", "COOLANT_TEMP"):
-            print(f"{command} = {ctx.obd2.live_value(command)}")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    while True:
+        clear_screen()
+        lignes = boite_titre("LECTURE TEMPS REEL", MAGENTA, CYAN) + [""]
+        categories = live_data.categories()
+        for i, categorie in enumerate(categories, start=1):
+            lignes.append(GREEN + f" [{i}] " + RESET + categorie)
+        lignes.append(GREEN + f" [{len(categories) + 1}] " + RESET + "Tout afficher")
+        lignes.append(YELLOW + f" [{len(categories) + 2}] " + RESET + "Retour")
+        lignes.append("")
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
+
+        if choice == str(len(categories) + 2):
+            return
+        if choice == str(len(categories) + 1):
+            _afficher_valeurs(ctx.obd2, live_data.all_commands())
+            continue
+        if choice.isdigit() and 1 <= int(choice) <= len(categories):
+            _afficher_valeurs(ctx.obd2, live_data.commands_for(categories[int(choice) - 1]))
+            continue
+        print(RED + "Choix invalide." + RESET)
+        input("Appuyez sur Entrée pour continuer...")
+
+
+def _afficher_valeurs(obd2: Obd2Client, commandes: List[Tuple[str, str]]) -> None:
+    clear_screen()
+    for command_name, label in commandes:
+        valeur = format_live_value(obd2.live_value(command_name))
+        print(f"{label} : {valeur}")
     input("\nAppuyez sur Entrée pour continuer...")
 
 

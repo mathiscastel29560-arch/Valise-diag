@@ -26,8 +26,11 @@ Le menu se présente comme un tableau de bord (heure, IP, CPU/température/RAM/
 disque/Wi-Fi, style cyberdeck) avec un écran de démarrage animé, organisé en
 onglets :
 
-- **Diagnostic** — codes défauts, lecture temps réel, tests actionneurs,
-  identification ECU, historique des actions effectuées sur le véhicule.
+- **Diagnostic** — codes défauts, lecture temps réel (régime, pression
+  admission/suralimentation, pressions carburant, sondes O2, trims,
+  température huile/catalyseur, tension calculateur... voir
+  `live_data.py`), tests actionneurs, identification ECU, historique des
+  actions effectuées sur le véhicule.
 - **Programmation** — lecture/écriture de paramètres ECU + doc rapide sur le
   vocabulaire de codage.
 - **Internet** — statut réseau, Wi-Fi (liste/connexion/`nmtui`), ping, test de

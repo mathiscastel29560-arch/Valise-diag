@@ -32,7 +32,10 @@ class Obd2Client:
         self._connection.query(obd.commands.CLEAR_DTC)
 
     def live_value(self, command_name: str):
-        response = self._connection.query(getattr(obd.commands, command_name))
+        command = getattr(obd.commands, command_name, None)
+        if command is None:
+            return None  # unknown in this version of python-obd — treated like "unsupported"
+        response = self._connection.query(command)
         return None if response.is_null() else response.value
 
     def vehicle_state(self) -> VehicleState:
@@ -46,3 +49,29 @@ class Obd2Client:
 
     def close(self) -> None:
         self._connection.close()
+
+
+_UNITES_COURTES = {
+    "revolutions_per_minute": "tr/min",
+    "kilometer_per_hour": "km/h",
+    "kilopascal": "kPa",
+    "pascal": "Pa",
+    "percent": "%",
+    "degree_Celsius": "°C",
+    "volt": "V",
+    "milliampere": "mA",
+    "degree": "°",
+    "gps": "g/s",
+    "liters_per_hour": "L/h",
+    "count": "",
+}
+
+
+def format_live_value(value) -> str:
+    if value is None:
+        return "non disponible"
+    magnitude = getattr(value, "magnitude", None)
+    if magnitude is None:
+        return str(value)
+    unite = _UNITES_COURTES.get(str(value.units), str(value.units))
+    return f"{magnitude:g} {unite}".rstrip()
