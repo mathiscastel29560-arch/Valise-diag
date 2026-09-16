@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Ces fichiers contiennent les identifiants réels de VOTRE véhicule :
+# on garde les .example.yaml dans le dépôt, pas les fichiers actifs.
+config/app.yaml
+config/vehicle_profile.yaml

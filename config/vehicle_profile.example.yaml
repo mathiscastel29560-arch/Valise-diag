@@ -1,0 +1,45 @@
+# Profil véhicule — À ADAPTER pour votre véhicule avant toute utilisation réelle.
+#
+# Les identifiants (tx_header, rx_header, did, control_parameter...) sont
+# spécifiques au constructeur et à l'ECU. Ne les inventez pas : récupérez-les
+# depuis une documentation que vous détenez légitimement (manuel d'atelier
+# constructeur, base de données technique officielle, export réalisé avec un
+# outil de diagnostic professionnel sur VOTRE véhicule). Ce projet ne fournit
+# volontairement aucune base de données propriétaire ni aucun algorithme de
+# déverrouillage de sécurité ECU (SecurityAccess).
+#
+# Copiez ce fichier vers config/vehicle_profile.yaml puis modifiez-le.
+
+make: "Exemple"
+model: "Exemple"
+year: 2015
+
+ecus:
+  - name: "moteur"
+    tx_header: "7E0"   # adresse CAN d'émission vers l'ECU moteur (exemple ISO 15765-4 11 bits)
+    rx_header: "7E8"   # adresse CAN de réponse de l'ECU moteur
+
+    actuators:
+      - name: "electrovanne_epurateur"
+        description: "Électrovanne de purge canister (EXEMPLE — did fictif, à remplacer)"
+        did: "F1A0"              # Data Identifier (hex) — À REMPLACER par la vraie valeur
+        control_parameter: 0x03  # 0x03 = shortTermAdjustment (UDS 0x2F)
+        on_state: "01"
+        off_state: "00"
+        max_duration_s: 2.0
+        requires_engine_off: true
+        requires_stationary: true
+
+    parameters:
+      - name: "avance_allumage"
+        description: "Avance à l'allumage (EXEMPLE — did fictif, laissé en lecture seule)"
+        did: "F40A"
+        writable: false   # ne passez à true qu'après avoir validé le DID, le format et les bornes
+        data_format: "int8"
+        scale: 1.0
+        offset: 0.0
+        unit: "°"
+        min_value: -10
+        max_value: 40
+        requires_engine_off: false
+        requires_stationary: true

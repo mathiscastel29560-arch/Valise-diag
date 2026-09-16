@@ -1,0 +1,8 @@
+# Copiez ce fichier vers config/app.yaml puis adaptez-le.
+
+port: "/dev/ttyUSB0"        # ou /dev/serial0 pour un module ELM327 relié au GPIO UART
+baudrate: 38400
+max_speed_kmh: 0             # tests actionneurs / écritures refusés au-dessus de cette vitesse
+require_confirmation: true   # demande une confirmation explicite avant toute action sensible
+simulate: false
+vehicle_profile_path: "config/vehicle_profile.yaml"

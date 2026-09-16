@@ -1,0 +1,21 @@
+[Unit]
+Description=Valise de diagnostic OBD/UDS
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/valise-diag
+ExecStart=/usr/bin/python3 -m valise_diag --config /home/pi/valise-diag/config/app.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+# Remarque : le menu interactif (cli.py) demande une confirmation opérateur
+# avant chaque action sur les actionneurs/paramètres, ce qui suppose un
+# terminal (SSH ou console locale). Cette unité systemd est un point de départ
+# si vous transformez le projet en service non-interactif (ex. journalisation
+# continue des codes défauts) : elle n'est pas destinée à automatiser les
+# tests actionneurs / écritures de paramètres, qui doivent rester supervisés.
