@@ -80,7 +80,11 @@ cp config/app.example.yaml config/app.yaml
 ```
 
 Éditez ensuite `config/vehicle_profile.yaml` avec les identifiants réels de
-votre véhicule (voir les commentaires dans le fichier).
+votre véhicule (voir les commentaires dans le fichier). Pour un véhicule du
+groupe VAG (VW/Audi/Seat/Skoda) sur interface KKL, partez plutôt de
+`config/vehicle_profile.vag.example.yaml`, qui préremplit les adresses de
+module standard et explique où trouver les vraies valeurs de codage
+(wiki Ross-Tech).
 
 ## Utilisation
 

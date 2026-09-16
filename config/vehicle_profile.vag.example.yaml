@@ -1,0 +1,115 @@
+# Gabarit de démarrage pour les véhicules du groupe VAG (VW/Audi/Seat/Skoda)
+# sur l'interface KKL (câble K-line). Copiez ce fichier vers
+# config/vehicle_profile.yaml, gardez uniquement les modules qui existent
+# sur votre véhicule, et remplissez les DID / numéros de bloc en vous basant
+# sur une documentation que vous détenez légitimement pour VOTRE véhicule
+# (voir la section "Où trouver les vraies valeurs" plus bas).
+#
+# Ce qui EST fiable et déjà rempli ci-dessous : les adresses de module
+# K-line. C'est une convention d'adressage standard, publiée sans
+# restriction depuis des décennies par la communauté VCDS (Ross-Tech) — ce
+# n'est pas une donnée propriétaire secrète, juste "à quelle porte on
+# frappe". Ça ne déclenche rien en soi : ça sert seulement à parler au bon
+# calculateur.
+#
+# Ce qui N'EST PAS rempli (volontairement) : les identifiants de paramètres,
+# les actionneurs et les numéros de bloc KW1281 (blocks:). Ceux-là sont
+# spécifiques à chaque calculateur ET à chaque année/version logicielle —
+# aucune valeur générique fiable n'existe.
+#
+# --- Où trouver les vraies valeurs ---
+# Pour le groupe VAG, la référence de la communauté VCDS est le wiki
+# Ross-Tech (wiki.ross-tech.com) : il documente, module par module, les
+# canaux de codage long/adaptation. Cherchez la page de VOTRE calculateur
+# précis (moteur, ABS, confort...) pour votre modèle/année. C'est gratuit et
+# public.
+#
+# --- Quel protocole choisir ---
+# - Véhicules jusqu'à ~2000-2004 : la plupart des modules parlent KW1281
+#   (protocol: "kw1281" ci-dessous).
+# - Véhicules ~2001-2006 (transition) : souvent KWP2000 (protocol:
+#   "kwp2000_kline").
+# - Véhicules plus récents (généralement post-2006/2008, tout-CAN) : ce
+#   n'est plus l'interface KKL qu'il faut utiliser mais l'interface OBD2
+#   (ELM327/CAN), voir config/vehicle_profile.example.yaml — l'adressage
+#   interne y est différent (passerelle CAN) et pas assez stable d'une
+#   plateforme à l'autre pour être documenté ici de façon fiable.
+#
+# Si vous ne savez pas dans quelle catégorie tombe votre véhicule, l'onglet
+# Diagnostic > Identification ECU + un essai de connexion vous le dira vite
+# (pas de réponse en KW1281 → essayez KWP2000, et inversement).
+
+make: "VAG (VW/Audi/Seat/Skoda)"
+model: "À adapter"
+year: 2003
+
+ecus:
+  - name: "moteur"
+    protocol: "kw1281"       # ou "kwp2000_kline" selon l'année, voir ci-dessus
+    tx_header: "01"
+    blocks: {}                # à compléter : read_fault_codes / clear_fault_codes (Ross-Tech)
+    actuators: []
+    parameters: []
+
+  - name: "boite_auto"
+    protocol: "kw1281"
+    tx_header: "02"
+    blocks: {}
+    actuators: []
+    parameters: []
+
+  - name: "abs"
+    protocol: "kw1281"
+    tx_header: "03"
+    blocks: {}
+    actuators: []
+    parameters: []
+
+  - name: "climatisation"
+    protocol: "kw1281"
+    tx_header: "08"
+    blocks: {}
+    actuators: []
+    parameters: []
+
+  - name: "airbags"
+    protocol: "kw1281"
+    tx_header: "15"
+    blocks: {}
+    actuators: []
+    parameters: []
+
+  - name: "instruments"
+    protocol: "kw1281"
+    tx_header: "17"
+    blocks: {}
+    actuators: []
+    parameters: []
+
+  - name: "immobiliseur"
+    protocol: "kw1281"
+    tx_header: "25"
+    blocks: {}
+    actuators: []
+    parameters: []
+
+  - name: "centralisation"
+    protocol: "kw1281"
+    tx_header: "35"
+    blocks: {}
+    actuators: []
+    parameters: []
+
+  - name: "confort"           # vitres, rétros, éclairage intérieur...
+    protocol: "kw1281"
+    tx_header: "46"
+    blocks: {}
+    actuators: []
+    parameters: []
+
+  - name: "radio"
+    protocol: "kw1281"
+    tx_header: "56"
+    blocks: {}
+    actuators: []
+    parameters: []
