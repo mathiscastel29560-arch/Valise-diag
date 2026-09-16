@@ -69,7 +69,16 @@ deactivate
 # 4. Configuration (ne touche pas à un fichier déjà présent)
 echo "=== Configuration ==="
 [ -f config/vehicle_profile.yaml ] || cp config/vehicle_profile.example.yaml config/vehicle_profile.yaml
-[ -f config/app.yaml ] || cp config/app.example.yaml config/app.yaml
+if [ ! -f config/app.yaml ]; then
+    cp config/app.example.yaml config/app.yaml
+    # Matériel mono-cœur (Pi 1 / Pi Zero premier du nom) : allège l'écran de
+    # démarrage et la veille par défaut pour rester fluide.
+    if [ "$(nproc)" -eq 1 ]; then
+        sed -i 's/^boot_rapide: false/boot_rapide: true/' config/app.yaml
+        sed -i 's/^veille_type: "aleatoire"/veille_type: "citations"/' config/app.yaml
+        echo "-> Matériel mono-cœur détecté (Pi Zero / Pi 1) : démarrage rapide et veille légère activés."
+    fi
+fi
 echo "-> Pensez à éditer config/vehicle_profile.yaml et config/app.yaml (nano)."
 
 # 5. Accès aux adaptateurs USB série (ELM327 / KKL)

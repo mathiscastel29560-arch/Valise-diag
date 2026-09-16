@@ -57,7 +57,7 @@ class _MenuContext:
     kw1281_clients: Dict[str, KWP1281Client]
     reachable_ecus: Dict[str, object]
     kw1281_ecus: Dict[str, object]
-    cpu_reader: system_status.LecteurCpu
+    moniteur: system_status.MoniteurSysteme
 
 
 def main(app_config: AppConfig, profile: VehicleProfile, app_config_path: str = "config/app.yaml") -> None:
@@ -103,7 +103,7 @@ def main(app_config: AppConfig, profile: VehicleProfile, app_config_path: str = 
         kw1281_clients=kw1281_clients,
         reachable_ecus=reachable_ecus,
         kw1281_ecus=kw1281_ecus,
-        cpu_reader=system_status.LecteurCpu(),
+        moniteur=system_status.MoniteurSysteme(),
     )
 
     try:
@@ -118,12 +118,14 @@ def main(app_config: AppConfig, profile: VehicleProfile, app_config_path: str = 
 # --------------------------------------------------------------------------
 
 def _afficher_dashboard(ctx: _MenuContext) -> None:
-    clear_screen()
     app_config, profile = ctx.app_config, ctx.profile
     heure = time.strftime("%H:%M:%S")
-    ip = system_status.get_ip()
-    temp = system_status.lire_temp_cpu()
-    cpu = ctx.cpu_reader.lire_pct()
+    # IP et température sont mises en cache par MoniteurSysteme (voir
+    # system_status.py) : pas de sous-processus/socket relancé à chaque
+    # rafraîchissement du tableau de bord.
+    ip = ctx.moniteur.adresse_ip()
+    temp = ctx.moniteur.temperature_cpu()
+    cpu = ctx.moniteur.cpu_pct()
     ram_u, ram_t, ram_pct = system_status.lire_ram()
     disk_u, disk_t, disk_pct = system_status.lire_disque()
     up_h, up_m = system_status.lire_uptime()
@@ -248,7 +250,6 @@ def _boucle_interactive(ctx: _MenuContext) -> None:
 
 def _menu_diagnostic(ctx: _MenuContext) -> None:
     while True:
-        clear_screen()
         lignes = boite_titre("DIAGNOSTIC", MAGENTA, CYAN) + [
             "",
             GREEN + " [1] " + RESET + "Lire les codes défauts",
@@ -369,7 +370,6 @@ def _handle_live_data(ctx: _MenuContext) -> None:
         return
 
     while True:
-        clear_screen()
         lignes = boite_titre("LECTURE TEMPS REEL", MAGENTA, CYAN) + [""]
         categories = live_data.categories()
         for i, categorie in enumerate(categories, start=1):
@@ -438,7 +438,6 @@ def _handle_history() -> None:
 
 def _menu_programmation(ctx: _MenuContext) -> None:
     while True:
-        clear_screen()
         lignes = boite_titre("PROGRAMMATION", CYAN, MAGENTA) + [
             "",
             GREEN + " [1] " + RESET + "Lire un paramètre ECU",
@@ -488,7 +487,6 @@ def _handle_write_param(ctx: _MenuContext) -> None:
 
 def _menu_systeme() -> None:
     while True:
-        clear_screen()
         lignes = boite_titre("SYSTEME", GREEN, CYAN) + [
             "",
             GREEN + " [1] " + RESET + "Terminal libre (bash)",
@@ -534,7 +532,6 @@ def _menu_systeme() -> None:
 
 def _menu_internet() -> None:
     while True:
-        clear_screen()
         lignes = boite_titre("INTERNET", CYAN, MAGENTA) + [
             "",
             GREEN + " [1] " + RESET + "Statut réseau",
@@ -613,7 +610,6 @@ def _handle_navigation() -> None:
 
 def _menu_parametres(app_config: AppConfig, app_config_path: str) -> AppConfig:
     while True:
-        clear_screen()
         lignes = boite_titre("PARAMETRES", MAGENTA, CYAN) + [
             "",
             GREEN + " [1] " + RESET + f"Interface : {app_config.interface}",
@@ -771,7 +767,6 @@ def _definir_pin(app_config: AppConfig) -> None:
 
 def _menu_jeux() -> None:
     while True:
-        clear_screen()
         lignes = boite_titre("JEUX", YELLOW, GREEN) + [
             "",
             GREEN + " [1] " + RESET + "Pendu",

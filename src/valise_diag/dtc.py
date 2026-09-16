@@ -1,10 +1,17 @@
-"""Standard OBD-II diagnostics (DTC read/clear, live PIDs) via the python-obd library."""
+"""Standard OBD-II diagnostics (DTC read/clear, live PIDs) via the python-obd library.
+
+`obd` (and its dependency `pint`) is imported lazily, inside the functions
+that actually need it, rather than at module import time. Importing it eagerly
+would cost every startup — even on the KKL interface, which never touches
+python-obd — and that import is measurably slow (pint builds a whole unit
+registry), which matters on a Raspberry Pi Zero's single slow core. Repeating
+`import obd` in each method is cheap after the first real import: Python
+caches it in sys.modules.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List
-
-import obd
 
 from .safety import VehicleState
 
@@ -17,21 +24,29 @@ class DtcEntry:
 
 class Obd2Client:
     def __init__(self, port: str, baudrate: int = 38400):
+        import obd
+
         self._connection = obd.OBD(portstr=port, baudrate=baudrate)
 
     def is_connected(self) -> bool:
         return self._connection.is_connected()
 
     def read_dtcs(self) -> List[DtcEntry]:
+        import obd
+
         response = self._connection.query(obd.commands.GET_DTC)
         if response.is_null():
             return []
         return [DtcEntry(code=code, description=desc or "") for code, desc in response.value]
 
     def clear_dtcs(self) -> None:
+        import obd
+
         self._connection.query(obd.commands.CLEAR_DTC)
 
     def live_value(self, command_name: str):
+        import obd
+
         command = getattr(obd.commands, command_name, None)
         if command is None:
             return None  # unknown in this version of python-obd — treated like "unsupported"

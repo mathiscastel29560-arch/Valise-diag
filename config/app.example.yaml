@@ -12,3 +12,17 @@ max_speed_kmh: 0               # tests actionneurs / écritures refusés au-dess
 require_confirmation: true     # demande une confirmation explicite avant toute action sensible
 simulate: false
 vehicle_profile_path: "config/vehicle_profile.yaml"
+
+# --- Apparence / performance ---
+# Sur un Raspberry Pi Zero premier du nom (mono-cœur), passez boot_rapide à
+# true et veille_type à "citations" (beaucoup plus léger que "matrix") pour
+# rester fluide. scripts/deploy_pi.sh le fait automatiquement s'il détecte
+# un Pi mono-cœur.
+titre_menu: "VALISE DIAG"
+boot_rapide: false           # true = écran de démarrage très court
+veille_active: true
+veille_delai: 60             # secondes d'inactivité avant l'écran de veille
+veille_type: "aleatoire"     # "matrix" | "citations" (léger) | "glitch" | "aleatoire"
+police: "defaut"             # "defaut" | "petit" | "moyen" | "grand"
+autostart: true
+pin_active: false

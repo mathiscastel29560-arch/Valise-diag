@@ -8,6 +8,7 @@ from __future__ import annotations
 import shutil
 import socket
 import subprocess
+import time
 from typing import Optional, Tuple
 
 
@@ -28,14 +29,26 @@ def lire_temp_cpu() -> Optional[float]:
         return None
 
 
-class LecteurCpu:
-    """Le pourcentage CPU se calcule sur un delta entre deux lectures de
-    /proc/stat : on garde donc un peu d'état entre deux appels."""
+class MoniteurSysteme:
+    """État du tableau de bord entre deux rafraîchissements.
 
-    def __init__(self) -> None:
-        self._precedent: Optional[Tuple[int, int]] = None
+    Le pourcentage CPU se calcule sur un delta entre deux lectures de
+    /proc/stat, donc a besoin d'état. La température (vcgencmd, un
+    sous-processus) et l'adresse IP (un socket) sont mises en cache quelques
+    secondes : elles ne changent presque jamais d'un rafraîchissement à
+    l'autre (le tableau de bord se redessine ~1x/s), et relancer un
+    sous-processus chaque seconde coûte cher sur un Pi Zero premier du nom
+    (mono-cœur, ~1 GHz).
+    """
 
-    def lire_pct(self) -> Optional[float]:
+    def __init__(self, ttl_temperature_s: float = 5.0, ttl_ip_s: float = 20.0) -> None:
+        self._cpu_precedent: Optional[Tuple[int, int]] = None
+        self._ttl_temperature_s = ttl_temperature_s
+        self._ttl_ip_s = ttl_ip_s
+        self._temperature_cache: Tuple[Optional[float], float] = (None, 0.0)
+        self._ip_cache: Tuple[Optional[str], float] = (None, 0.0)
+
+    def cpu_pct(self) -> Optional[float]:
         try:
             with open("/proc/stat") as f:
                 ligne = f.readline()
@@ -44,16 +57,32 @@ class LecteurCpu:
             total = sum(valeurs)
         except Exception:
             return None
-        if self._precedent is None:
-            self._precedent = (idle, total)
+        if self._cpu_precedent is None:
+            self._cpu_precedent = (idle, total)
             return 0.0
-        idle_prev, total_prev = self._precedent
+        idle_prev, total_prev = self._cpu_precedent
         delta_idle = idle - idle_prev
         delta_total = total - total_prev
-        self._precedent = (idle, total)
+        self._cpu_precedent = (idle, total)
         if delta_total <= 0:
             return 0.0
         return (1 - delta_idle / delta_total) * 100
+
+    def temperature_cpu(self) -> Optional[float]:
+        valeur, expire_a = self._temperature_cache
+        maintenant = time.monotonic()
+        if maintenant >= expire_a:
+            valeur = lire_temp_cpu()
+            self._temperature_cache = (valeur, maintenant + self._ttl_temperature_s)
+        return valeur
+
+    def adresse_ip(self) -> str:
+        valeur, expire_a = self._ip_cache
+        maintenant = time.monotonic()
+        if maintenant >= expire_a or valeur is None:
+            valeur = get_ip()
+            self._ip_cache = (valeur, maintenant + self._ttl_ip_s)
+        return valeur
 
 
 def lire_ram() -> Tuple[Optional[float], Optional[float], Optional[float]]:

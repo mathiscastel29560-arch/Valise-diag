@@ -146,6 +146,32 @@ la console physique du Pi (tty1). Voir `systemd/getty-autologin-tty1.conf`
 le `~/.bashrc` de l'utilisateur) — l'onglet Paramètres > "Démarrage
 automatique" active/désactive ce mécanisme sans rien réinstaller.
 
+## Performance sur Raspberry Pi Zero (premier du nom)
+
+Le Pi Zero v1 est mono-cœur (~1 GHz) : quelques choix limitent le travail
+inutile pour rester fluide dessus.
+
+- **`obd`/`pint` (utilisés par l'interface OBD2) ne sont importés qu'à la
+  demande**, jamais au démarrage : sur cette bibliothèque, cet import à lui
+  seul coûte plusieurs centaines de ms sur une machine rapide — largement
+  plus sur un Pi Zero — et n'a aucune raison d'être payé en interface KKL.
+- **Le tableau de bord met en cache la température CPU et l'adresse IP**
+  (`system_status.MoniteurSysteme`) au lieu de relancer `vcgencmd` (un
+  sous-processus) et une résolution réseau à chaque rafraîchissement
+  (~1x/s) : c'était le poste le plus coûteux en fonctionnement continu.
+- **Chaque écran (tableau de bord, sous-menus) s'affiche en une seule
+  écriture** plutôt qu'un `print()` par ligne, et ne relit la taille du
+  terminal qu'une fois par image.
+- **L'écran de veille "matrix"** ne calcule que les cellules réellement
+  visibles (au lieu de balayer tout l'écran) et tourne par défaut à ~11
+  images/seconde plutôt que ~17.
+- `scripts/deploy_pi.sh` détecte un Raspberry Pi mono-cœur (`nproc` == 1) et
+  active automatiquement `boot_rapide: true` et `veille_type: "citations"`
+  (le type de veille le plus léger) dans `config/app.yaml` généré — rien à
+  faire de plus. Sur un Pi Zero W ou Zero 2 W, vous pouvez aussi désactiver
+  entièrement la veille (`veille_active: false`) depuis l'onglet Paramètres
+  si besoin.
+
 ## Tests
 
 ```bash

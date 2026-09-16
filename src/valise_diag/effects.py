@@ -9,15 +9,7 @@ import select
 import sys
 import time
 
-from .theme import (
-    BOLD,
-    GREEN,
-    RESET,
-    clear_screen,
-    hauteur_terminal,
-    largeur_terminal,
-    print_centre,
-)
+from .theme import BOLD, GREEN, RESET, centrer_avec_couleur, clear_screen, hauteur_terminal, largeur_terminal
 
 _SYMBOLES_GLITCH = "!@#$%^&*<>/\\|[]{}=+~01"
 _CARACTERES_MATRIX = "01ABCDEFGHIJKLMNOPQRSTUVWXYZ$%#@&*+=<>?"
@@ -54,19 +46,21 @@ def decrypt_reveal_centre(texte_final: str, couleur: str, iterations: int = 10, 
     lignes = texte_final.strip("\n").split("\n")
 
     for i in range(iterations):
-        clear_screen()
-        print("\n" * 2)
+        seuil = i / iterations
+        bloc = ["\n" * 2]
         for ligne in lignes:
+            symboles = random.choices(_SYMBOLES_GLITCH, k=len(ligne))
             affichage = "".join(
-                " " if char == " " else (char if random.random() < (i / iterations) else random.choice(_SYMBOLES_GLITCH))
-                for char in ligne
+                " " if char == " " else (char if random.random() < seuil else symbole)
+                for char, symbole in zip(ligne, symboles)
             )
-            print_centre(affichage, couleur)
+            bloc.append(centrer_avec_couleur(affichage, couleur))
+        sys.stdout.write("\033[2J\033[H" + "\n".join(bloc) + "\n")
+        sys.stdout.flush()
         time.sleep(delai)
 
-    clear_screen()
-    print("\n" * 2)
-    print_centre(texte_final, couleur + BOLD)
+    sys.stdout.write("\033[2J\033[H" + "\n" * 2 + centrer_avec_couleur(texte_final, couleur + BOLD) + "\n")
+    sys.stdout.flush()
 
 
 def barre_progression(duree: float = 1.5, largeur_barre: int = 36, couleur: str = "") -> None:
@@ -82,37 +76,66 @@ def barre_progression(duree: float = 1.5, largeur_barre: int = 36, couleur: str 
     print("\n")
 
 
-def effet_matrix(duree: float = 5.0) -> None:
-    largeur = min(largeur_terminal(), 120)
+def effet_matrix(duree: float = 5.0, largeur_max: int = 80, fps: float = 11.0) -> None:
+    """"Pluie" façon Matrix. Deux optimisations pour rester fluide sur un Pi
+    Zero (mono-cœur) : on ne calcule l'état que des ~7 cellules "actives" par
+    colonne au lieu de balayer toute la hauteur (les autres restent des
+    espaces), et chaque ligne regroupe ses caractères consécutifs de même
+    style en un seul bloc de code couleur au lieu d'un par caractère — moins
+    de travail Python, et surtout beaucoup moins d'octets à envoyer à la
+    console à chaque image.
+    """
+    largeur = min(largeur_terminal(), largeur_max)
     hauteur = max(hauteur_terminal() - 1, 10)
     colonnes = [random.randint(-hauteur, 0) for _ in range(largeur)]
     vitesses = [random.choice([1, 1, 2]) for _ in range(largeur)]
+    delai = 1.0 / fps
 
     fin = time.time() + duree
     clear_screen()
     while time.time() < fin:
         if touche_en_attente():
             return
-        sys.stdout.write("\033[H")
-        lignes = []
-        for y in range(hauteur):
-            ligne_chars = []
-            for x in range(largeur):
-                pos = colonnes[x]
-                if y == pos:
-                    ligne_chars.append(GREEN + BOLD + random.choice(_CARACTERES_MATRIX) + RESET)
-                elif 0 <= pos - y <= 6:
-                    ligne_chars.append(GREEN + random.choice(_CARACTERES_MATRIX) + RESET)
-                else:
-                    ligne_chars.append(" ")
-            lignes.append("".join(ligne_chars))
-        sys.stdout.write("\n".join(lignes))
+
+        # 0 = traînée, 1 = tête, None = case vide. Ne remplit que les
+        # cellules réellement visibles pour cette image.
+        grille = [[None] * largeur for _ in range(hauteur)]
+        for x in range(largeur):
+            pos = colonnes[x]
+            for y in range(max(pos - 6, 0), min(pos + 1, hauteur)):
+                if 0 <= y < hauteur:
+                    grille[y][x] = 1 if y == pos else 0
+
+        lignes = [_ligne_matrix(grille[y], largeur) for y in range(hauteur)]
+        sys.stdout.write("\033[H" + "\n".join(lignes))
         sys.stdout.flush()
+
         for x in range(largeur):
             colonnes[x] += vitesses[x]
             if colonnes[x] - 6 > hauteur and random.random() < 0.05:
                 colonnes[x] = random.randint(-10, 0)
-        time.sleep(0.06)
+        time.sleep(delai)
+
+
+def _ligne_matrix(etats: list, largeur: int) -> str:
+    """Construit une ligne en regroupant les cases consécutives de même état
+    (vide / traînée / tête) en un seul segment coloré, plutôt qu'un code
+    ANSI par caractère."""
+    parties = []
+    x = 0
+    while x < largeur:
+        etat = etats[x]
+        debut = x
+        while x < largeur and etats[x] == etat:
+            x += 1
+        longueur = x - debut
+        if etat is None:
+            parties.append(" " * longueur)
+        else:
+            texte = "".join(random.choices(_CARACTERES_MATRIX, k=longueur))
+            style = GREEN + BOLD if etat == 1 else GREEN
+            parties.append(style + texte + RESET)
+    return "".join(parties)
 
 
 def galerie_citations(citations: list, couleur: str, duree: float = 3.5) -> None:
@@ -125,15 +148,19 @@ def galerie_citations(citations: list, couleur: str, duree: float = 3.5) -> None
         time.sleep(0.05)
 
 
-def glitch_flash(passes: int = 2) -> None:
+def glitch_flash(passes: int = 2, largeur_max: int = 80) -> None:
     from .theme import RED, CYAN, MAGENTA
 
-    largeur = largeur_terminal()
+    largeur = min(largeur_terminal(), largeur_max)
     hauteur = hauteur_terminal()
+    couleurs = [RED, CYAN, MAGENTA, GREEN]
     for _ in range(passes):
-        clear_screen()
+        lignes = []
         for _ in range(hauteur - 1):
-            couleur = random.choice([RED, CYAN, MAGENTA, GREEN])
-            print(couleur + "".join(random.choice(_SYMBOLES_GLITCH) for _ in range(largeur)) + RESET)
+            couleur = random.choice(couleurs)
+            texte = "".join(random.choices(_SYMBOLES_GLITCH, k=largeur))
+            lignes.append(couleur + texte + RESET)
+        sys.stdout.write("\033[2J\033[H" + "\n".join(lignes))
+        sys.stdout.flush()
         time.sleep(0.05)
     clear_screen()

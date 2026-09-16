@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import sys
-from typing import Iterable
+from typing import Iterable, Optional
 
 CYAN = "\033[96m"
 MAGENTA = "\033[95m"
@@ -37,22 +37,48 @@ def clear_screen() -> None:
     sys.stdout.flush()
 
 
-def centrer_ligne(texte: str) -> str:
-    pad = max((largeur_terminal() - largeur_visible(texte)) // 2, 0)
+def _centrer_avec_largeur(texte: str, largeur: int) -> str:
+    pad = max((largeur - largeur_visible(texte)) // 2, 0)
     return " " * pad + texte
 
 
+def centrer_ligne(texte: str) -> str:
+    return _centrer_avec_largeur(texte, largeur_terminal())
+
+
+def centrer_avec_couleur(texte: str, couleur: str = "", largeur: Optional[int] = None) -> str:
+    """Centre (et colore) un texte, éventuellement multi-lignes, sans l'écrire.
+    Permet d'assembler plusieurs blocs et de les envoyer en une seule
+    écriture (voir effects.py)."""
+    if largeur is None:
+        largeur = largeur_terminal()
+    lignes = [
+        _centrer_avec_largeur(couleur + ligne + RESET if couleur else ligne, largeur)
+        for ligne in texte.split("\n")
+    ]
+    return "\n".join(lignes)
+
+
 def print_centre(texte: str, couleur: str = "") -> None:
-    for ligne in texte.split("\n"):
-        print(centrer_ligne(couleur + ligne + RESET if couleur else ligne))
+    sys.stdout.write(centrer_avec_couleur(texte, couleur) + "\n")
+    sys.stdout.flush()
 
 
-def afficher_bloc_centre(lignes: Iterable[str]) -> None:
+def afficher_bloc_centre(lignes: Iterable[str], effacer: bool = True) -> None:
+    """Dessine un bloc de lignes centré en une seule écriture (au lieu d'un
+    print() par ligne) : sur un Pi Zero, notamment via une console série, ça
+    évite une rafale d'appels système à chaque rafraîchissement de menu.
+    """
     lignes = list(lignes)
-    marge_haut = max((hauteur_terminal() - len(lignes)) // 2, 0)
-    sys.stdout.write("\n" * marge_haut)
+    taille = shutil.get_terminal_size((80, 24))  # un seul appel pour largeur + hauteur
+    marge_haut = max((taille.lines - len(lignes)) // 2, 0)
+    parties = ["\033[2J\033[H"] if effacer else []
+    parties.append("\n" * marge_haut)
     for ligne in lignes:
-        print(centrer_ligne(ligne))
+        parties.append(_centrer_avec_largeur(ligne, taille.columns))
+        parties.append("\n")
+    sys.stdout.write("".join(parties))
+    sys.stdout.flush()
 
 
 def construire_titre_boite(texte: str, largeur_interieure: int = 38) -> str:
