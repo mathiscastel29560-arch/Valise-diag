@@ -1,5 +1,19 @@
+# Ce fichier n'est PAS le bon mécanisme pour démarrer le menu interactif au
+# boot : le menu a besoin d'un vrai terminal (clavier, veille, tableau de
+# bord), ce qu'un service systemd "Type=simple" sans TTY ne fournit pas.
+#
+# Pour un démarrage automatique sur l'écran du Pi, utilisez plutôt :
+#   - systemd/getty-autologin-tty1.conf (connexion automatique sur tty1)
+#   - systemd/autostart.bashrc.snippet (lance le menu à cette connexion)
+# Voir le README, section "Démarrage automatique".
+#
+# Ce fichier reste utile si vous transformez un jour le projet en service
+# non-interactif (ex. journalisation continue des codes défauts en tâche de
+# fond) : il n'est pas destiné à automatiser les tests actionneurs / écritures
+# de paramètres, qui doivent rester supervisés par un opérateur.
+
 [Unit]
-Description=Valise de diagnostic OBD/UDS
+Description=Valise de diagnostic OBD/UDS (exemple de service non-interactif)
 After=network.target
 
 [Service]
@@ -12,10 +26,3 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-
-# Remarque : le menu interactif (cli.py) demande une confirmation opérateur
-# avant chaque action sur les actionneurs/paramètres, ce qui suppose un
-# terminal (SSH ou console locale). Cette unité systemd est un point de départ
-# si vous transformez le projet en service non-interactif (ex. journalisation
-# continue des codes défauts) : elle n'est pas destinée à automatiser les
-# tests actionneurs / écritures de paramètres, qui doivent rester supervisés.

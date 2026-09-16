@@ -18,6 +18,17 @@ INTERFACES = ("obd2", "kkl")
 # uds_can needs interface "obd2"; the other two need interface "kkl".
 PROTOCOLS = ("uds_can", "kwp2000_kline", "kw1281")
 
+VEILLE_TYPES = ("matrix", "citations", "glitch", "aleatoire")
+
+# Console font sizes applied via `setfont` (Linux console, e.g. on the Pi's
+# own HDMI/composite output — irrelevant over SSH). None means "leave as is".
+POLICES = {
+    "defaut": None,
+    "petit": "Lat15-Terminus16",
+    "moyen": "Lat15-TerminusBold20x10",
+    "grand": "Lat15-TerminusBold32x16",
+}
+
 
 @dataclass
 class ActuatorDef:
@@ -86,6 +97,18 @@ class AppConfig:
     require_confirmation: bool = True
     simulate: bool = False
     vehicle_profile_path: str = "config/vehicle_profile.yaml"
+
+    # Cosmetics / appliance behaviour (dashboard, screensaver, console lock).
+    titre_menu: str = "VALISE DIAG"
+    boot_rapide: bool = False  # passe l'écran de démarrage en version courte
+    veille_active: bool = True
+    veille_delai: int = 60  # seconds of inactivity before the screensaver kicks in
+    veille_type: str = "aleatoire"  # one of VEILLE_TYPES
+    police: str = "defaut"  # one of POLICES
+    autostart: bool = True
+    pin_active: bool = False
+    pin_hash: str = ""
+    pin_salt: str = ""
 
 
 def _parse_int(value) -> int:

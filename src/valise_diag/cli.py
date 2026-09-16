@@ -1,18 +1,42 @@
-"""Menu texte principal, organisé en onglets — fonctionne par SSH ou console locale."""
+"""Menu texte principal à onglets, avec tableau de bord système et petite mise
+en scène (démarrage, veille, easter eggs). Fonctionne aussi bien sur un vrai
+terminal (clavier direct, veille automatique) qu'en entrée non-interactive
+(tests, script) — dans ce dernier cas il retombe sur un menu ligne par ligne
+classique plutôt que d'échouer sur un ioctl impossible."""
 from __future__ import annotations
 
-from typing import Dict
+import getpass
+import select
+import sys
+import termios
+import time
+import tty
+from dataclasses import dataclass
+from typing import Dict, Optional
 
-from . import games, netinfo
+from . import easter_eggs, games, history, netinfo, pin_lock, screensaver, system_status, system_tools
 from .actuators import ActuatorController, ActuatorError
 from .boot import show_boot_screen
 from .coding_doc import afficher_doc_codage
-from .config import AppConfig, INTERFACES, VehicleProfile, save_app_config
+from .config import AppConfig, INTERFACES, POLICES, VEILLE_TYPES, VehicleProfile, save_app_config
 from .dtc import Obd2Client
 from .kwp1281 import KWP1281Client
 from .kwp2000 import SID_CLEAR_DIAGNOSTIC_INFORMATION, SID_READ_DTC_BY_STATUS
 from .parameters import ParameterController, ParameterError
 from .safety import SafetyGuard, SafetyPolicy, SafetyViolation, VehicleState
+from .theme import (
+    BOLD,
+    CYAN,
+    GREEN,
+    MAGENTA,
+    RED,
+    RESET,
+    YELLOW,
+    afficher_bloc_centre,
+    boite_titre,
+    clear_screen,
+    print_centre,
+)
 from .transport import build_diagnostic_clients, build_kw1281_clients
 
 
@@ -21,11 +45,30 @@ def _confirm(message: str) -> bool:
     return answer.strip() == "OUI"
 
 
+@dataclass
+class _MenuContext:
+    app_config: AppConfig
+    app_config_path: str
+    profile: VehicleProfile
+    obd2: Optional[Obd2Client]
+    actuator_ctrl: ActuatorController
+    parameter_ctrl: ParameterController
+    uds_clients: Dict[str, object]
+    kw1281_clients: Dict[str, KWP1281Client]
+    reachable_ecus: Dict[str, object]
+    kw1281_ecus: Dict[str, object]
+    cpu_reader: system_status.LecteurCpu
+
+
 def main(app_config: AppConfig, profile: VehicleProfile, app_config_path: str = "config/app.yaml") -> None:
-    show_boot_screen()
-    print(f"Valise diagnostic — {profile.make} {profile.model} {profile.year}")
-    print(f"Interface active : {app_config.interface.upper()}")
-    print("ATTENTION : lisez docs/SECURITE.md avant toute action sur les actionneurs ou les paramètres moteur.\n")
+    show_boot_screen(rapide=app_config.boot_rapide)
+
+    if app_config.pin_active and app_config.pin_hash:
+        pin_lock.demander_pin(app_config.pin_salt, app_config.pin_hash)
+
+    print_centre(f"{profile.make} {profile.model} {profile.year} — interface {app_config.interface.upper()}", CYAN)
+    print_centre("Lisez docs/SECURITE.md avant toute action sur les actionneurs ou les paramètres moteur.", YELLOW)
+    time.sleep(1.0)
 
     guard = SafetyGuard(
         SafetyPolicy(max_speed_kmh=app_config.max_speed_kmh, require_confirmation=app_config.require_confirmation),
@@ -49,100 +92,223 @@ def main(app_config: AppConfig, profile: VehicleProfile, app_config_path: str = 
     if app_config.interface == "obd2" and not app_config.simulate:
         obd2 = Obd2Client(app_config.port, app_config.baudrate)
 
+    ctx = _MenuContext(
+        app_config=app_config,
+        app_config_path=app_config_path,
+        profile=profile,
+        obd2=obd2,
+        actuator_ctrl=actuator_ctrl,
+        parameter_ctrl=parameter_ctrl,
+        uds_clients=uds_clients,
+        kw1281_clients=kw1281_clients,
+        reachable_ecus=reachable_ecus,
+        kw1281_ecus=kw1281_ecus,
+        cpu_reader=system_status.LecteurCpu(),
+    )
+
     try:
-        _run_top_menu(app_config, app_config_path, profile, guard, obd2, actuator_ctrl, parameter_ctrl,
-                      uds_clients, kw1281_clients, reachable_ecus, kw1281_ecus)
+        _run_top_menu(ctx)
     finally:
         if obd2 is not None:
             obd2.close()
 
 
-def _run_top_menu(app_config, app_config_path, profile, guard, obd2, actuator_ctrl, parameter_ctrl,
-                   uds_clients, kw1281_clients, reachable_ecus, kw1281_ecus) -> None:
+# --------------------------------------------------------------------------
+# Tableau de bord et boucle principale
+# --------------------------------------------------------------------------
+
+def _afficher_dashboard(ctx: _MenuContext) -> None:
+    clear_screen()
+    app_config, profile = ctx.app_config, ctx.profile
+    heure = time.strftime("%H:%M:%S")
+    ip = system_status.get_ip()
+    temp = system_status.lire_temp_cpu()
+    cpu = ctx.cpu_reader.lire_pct()
+    ram_u, ram_t, ram_pct = system_status.lire_ram()
+    disk_u, disk_t, disk_pct = system_status.lire_disque()
+    up_h, up_m = system_status.lire_uptime()
+    wifi = system_status.lire_wifi_signal()
+
+    largeur_barre = 40
+    lignes = [
+        YELLOW + "-" * largeur_barre + RESET,
+        YELLOW + f" {heure} | IP {ip} | {app_config.interface.upper()}" + RESET,
+        YELLOW + "-" * largeur_barre + RESET,
+        GREEN + f" CPU {f'{int(cpu)}%' if cpu is not None else 'N/A'}   "
+        f"TEMP {f'{temp:.1f}C' if temp is not None else 'N/A'}" + RESET,
+        GREEN + f" RAM {f'{int(ram_u)}/{int(ram_t)}Mo ({int(ram_pct)}%)' if ram_t else 'N/A'}" + RESET,
+        GREEN + f" DISQUE {f'{disk_u:.1f}/{disk_t:.1f}Go ({int(disk_pct)}%)' if disk_t else 'N/A'}" + RESET,
+        GREEN + f" WIFI {f'{wifi}dBm' if wifi is not None else 'N/A'}   "
+        f"UP {f'{up_h}h{up_m}m' if up_h is not None else 'N/A'}" + RESET,
+        "",
+        *boite_titre(app_config.titre_menu),
+        "",
+        GREEN + " [1] " + RESET + "Diagnostic",
+        GREEN + " [2] " + RESET + "Programmation",
+        GREEN + " [3] " + RESET + "Internet",
+        GREEN + " [4] " + RESET + "Système",
+        GREEN + " [5] " + RESET + "Paramètres",
+        GREEN + " [6] " + RESET + "Jeux",
+        RED + " [7] " + RESET + "Éteindre le Pi",
+        YELLOW + " [8] " + RESET + "Quitter le menu",
+        "",
+        CYAN + f"{profile.make} {profile.model} {profile.year}" + RESET,
+    ]
+    afficher_bloc_centre(lignes)
+
+
+def _dispatch(touche: str, ctx: _MenuContext) -> bool:
+    """Exécute l'action associée à la touche. Renvoie False pour quitter le menu principal."""
+    if touche == "1":
+        _menu_diagnostic(ctx)
+    elif touche == "2":
+        _menu_programmation(ctx)
+    elif touche == "3":
+        _menu_internet()
+    elif touche == "4":
+        _menu_systeme()
+    elif touche == "5":
+        ctx.app_config = _menu_parametres(ctx.app_config, ctx.app_config_path)
+    elif touche == "6":
+        _menu_jeux()
+    elif touche == "7":
+        if _confirm("Éteindre le Raspberry Pi"):
+            system_tools.eteindre_pi()
+            return False
+    elif touche == "8":
+        return False
+    return True
+
+
+def _run_top_menu(ctx: _MenuContext) -> None:
+    if sys.stdin.isatty():
+        _boucle_interactive(ctx)
+    else:
+        _boucle_simple(ctx)
+
+
+def _boucle_simple(ctx: _MenuContext) -> None:
+    """Repli utilisé quand l'entrée standard n'est pas un vrai terminal (tests,
+    pipe) : pas de veille ni de frappe instantanée, un menu classique suffit."""
     while True:
-        print(
-            "\n=== MENU PRINCIPAL ===\n"
-            "1) Diagnostic\n"
-            "2) Programmation\n"
-            "3) Internet\n"
-            "4) Paramètres\n"
-            "5) Jeux\n"
-            "6) Quitter"
-        )
-        choice = input("> ").strip()
-        if choice == "1":
-            _menu_diagnostic(app_config, obd2, actuator_ctrl, uds_clients, kw1281_clients, reachable_ecus, kw1281_ecus)
-        elif choice == "2":
-            _menu_programmation(app_config, parameter_ctrl)
-        elif choice == "3":
-            _menu_internet()
-        elif choice == "4":
-            app_config = _menu_parametres(app_config, app_config_path)
-        elif choice == "5":
-            _menu_jeux()
-        elif choice == "6":
+        _afficher_dashboard(ctx)
+        touche = input(GREEN + "> " + RESET).strip()
+        if not _dispatch(touche, ctx):
             return
-        else:
-            print("Choix invalide.")
+
+
+def _boucle_interactive(ctx: _MenuContext) -> None:
+    fd = sys.stdin.fileno()
+    reglages_normaux = termios.tcgetattr(fd)
+    secret = ""
+    dernier_input = time.time()
+    try:
+        tty.setcbreak(fd)
+        while True:
+            _afficher_dashboard(ctx)
+            pret, _, _ = select.select([sys.stdin], [], [], 1.0)
+            touche = sys.stdin.read(1) if pret else None
+
+            if touche is None:
+                app_config = ctx.app_config
+                if app_config.veille_active and time.time() - dernier_input > app_config.veille_delai:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, reglages_normaux)
+                    screensaver.ecran_veille(app_config.veille_type)
+                    tty.setcbreak(fd)
+                    dernier_input = time.time()
+                continue
+            dernier_input = time.time()
+
+            secret = (secret + touche)[-10:]
+            if secret.endswith("serpent"):
+                termios.tcsetattr(fd, termios.TCSADRAIN, reglages_normaux)
+                games.jouer_serpent()
+                tty.setcbreak(fd)
+                secret = ""
+                continue
+            if secret.endswith("hack"):
+                termios.tcsetattr(fd, termios.TCSADRAIN, reglages_normaux)
+                easter_eggs.sequence_piratage()
+                tty.setcbreak(fd)
+                secret = ""
+                continue
+
+            termios.tcsetattr(fd, termios.TCSADRAIN, reglages_normaux)
+            continuer = _dispatch(touche, ctx)
+            tty.setcbreak(fd)
+            if not continuer:
+                return
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, reglages_normaux)
 
 
 # --------------------------------------------------------------------------
 # Onglet Diagnostic
 # --------------------------------------------------------------------------
 
-def _menu_diagnostic(app_config, obd2, actuator_ctrl, uds_clients, kw1281_clients, reachable_ecus, kw1281_ecus) -> None:
+def _menu_diagnostic(ctx: _MenuContext) -> None:
     while True:
-        print(
-            "\n--- DIAGNOSTIC ---\n"
-            "1) Lire les codes défauts\n"
-            "2) Effacer les codes défauts\n"
-            "3) Lecture temps réel\n"
-            "4) Tester un actionneur\n"
-            "5) Identification ECU\n"
-            "6) Retour"
-        )
-        choice = input("> ").strip()
+        clear_screen()
+        lignes = boite_titre("DIAGNOSTIC", MAGENTA, CYAN) + [
+            "",
+            GREEN + " [1] " + RESET + "Lire les codes défauts",
+            GREEN + " [2] " + RESET + "Effacer les codes défauts",
+            GREEN + " [3] " + RESET + "Lecture temps réel",
+            GREEN + " [4] " + RESET + "Tester un actionneur",
+            GREEN + " [5] " + RESET + "Identification ECU",
+            GREEN + " [6] " + RESET + "Historique des actions",
+            YELLOW + " [7] " + RESET + "Retour",
+            "",
+        ]
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
         try:
             if choice == "1":
-                _handle_read_dtc(app_config, obd2, uds_clients, kw1281_clients, reachable_ecus, kw1281_ecus)
+                _handle_read_dtc(ctx)
             elif choice == "2":
-                _handle_clear_dtc(app_config, obd2, uds_clients, kw1281_clients, reachable_ecus, kw1281_ecus)
+                _handle_clear_dtc(ctx)
             elif choice == "3":
-                _handle_live_data(app_config, obd2)
+                _handle_live_data(ctx)
             elif choice == "4":
-                _handle_actuator(app_config, actuator_ctrl, obd2)
+                _handle_actuator(ctx)
             elif choice == "5":
-                _handle_identification(app_config, obd2, reachable_ecus, kw1281_ecus)
+                _handle_identification(ctx)
             elif choice == "6":
+                _handle_history()
+            elif choice == "7":
                 return
             else:
-                print("Choix invalide.")
+                print(RED + "Choix invalide." + RESET)
+                input("Appuyez sur Entrée pour continuer...")
         except (SafetyViolation, ActuatorError) as exc:
-            print(f"Erreur : {exc}")
+            print(RED + f"Erreur : {exc}" + RESET)
+            input("Appuyez sur Entrée pour continuer...")
 
 
-def _handle_read_dtc(app_config, obd2, uds_clients, kw1281_clients, reachable_ecus, kw1281_ecus) -> None:
+def _handle_read_dtc(ctx: _MenuContext) -> None:
+    app_config = ctx.app_config
     if app_config.interface == "obd2":
-        if obd2 is None:
+        if ctx.obd2 is None:
             print("Non disponible en mode simulation.")
-            return
-        dtcs = obd2.read_dtcs()
-        if not dtcs:
-            print("Aucun code défaut.")
-        for dtc in dtcs:
-            print(f"{dtc.code}: {dtc.description}")
+        else:
+            dtcs = ctx.obd2.read_dtcs()
+            if not dtcs:
+                print("Aucun code défaut.")
+            for dtc in dtcs:
+                print(f"{dtc.code}: {dtc.description}")
+        input("\nAppuyez sur Entrée pour continuer...")
         return
 
-    for name, client in uds_clients.items():
-        if reachable_ecus[name].protocol != "kwp2000_kline":
+    for name, client in ctx.uds_clients.items():
+        if ctx.reachable_ecus[name].protocol != "kwp2000_kline":
             continue
         try:
             raw = client.request(SID_READ_DTC_BY_STATUS, bytes([0x00]))
             print(f"[{name}] codes défauts (hex brut, non décodé) : {raw.hex(' ')}")
         except Exception as exc:  # noqa: BLE001 - surfaced to the operator, not swallowed
             print(f"[{name}] erreur : {exc}")
-    for name, client in kw1281_clients.items():
-        block_title = kw1281_ecus[name].kw1281_blocks.get("read_fault_codes")
+    for name, client in ctx.kw1281_clients.items():
+        block_title = ctx.kw1281_ecus[name].kw1281_blocks.get("read_fault_codes")
         if block_title is None:
             print(f"[{name}] 'read_fault_codes' non défini dans le profil (section blocks:).")
             continue
@@ -151,107 +317,184 @@ def _handle_read_dtc(app_config, obd2, uds_clients, kw1281_clients, reachable_ec
             print(f"[{name}] codes défauts (hex brut, non décodé) : {response.data.hex(' ')}")
         except Exception as exc:  # noqa: BLE001
             print(f"[{name}] erreur : {exc}")
+    input("\nAppuyez sur Entrée pour continuer...")
 
 
-def _handle_clear_dtc(app_config, obd2, uds_clients, kw1281_clients, reachable_ecus, kw1281_ecus) -> None:
+def _handle_clear_dtc(ctx: _MenuContext) -> None:
     if not _confirm("Confirmer l'effacement des codes défauts"):
         return
+    app_config = ctx.app_config
     if app_config.interface == "obd2":
-        if obd2 is None:
+        if ctx.obd2 is None:
             print("Non disponible en mode simulation.")
-            return
-        obd2.clear_dtcs()
-        print("Codes défauts effacés.")
+        else:
+            ctx.obd2.clear_dtcs()
+            print("Codes défauts effacés.")
+            history.log_event(f"Codes défauts effacés (OBD2, {ctx.profile.make} {ctx.profile.model})")
+        input("\nAppuyez sur Entrée pour continuer...")
         return
 
-    for name, client in uds_clients.items():
-        if reachable_ecus[name].protocol != "kwp2000_kline":
+    for name, client in ctx.uds_clients.items():
+        if ctx.reachable_ecus[name].protocol != "kwp2000_kline":
             continue
         try:
             client.request(SID_CLEAR_DIAGNOSTIC_INFORMATION, bytes([0xFF, 0x00]))
             print(f"[{name}] codes défauts effacés.")
+            history.log_event(f"Codes défauts effacés ({name}, KWP2000)")
         except Exception as exc:  # noqa: BLE001
             print(f"[{name}] erreur : {exc}")
-    for name, client in kw1281_clients.items():
-        block_title = kw1281_ecus[name].kw1281_blocks.get("clear_fault_codes")
+    for name, client in ctx.kw1281_clients.items():
+        block_title = ctx.kw1281_ecus[name].kw1281_blocks.get("clear_fault_codes")
         if block_title is None:
             print(f"[{name}] 'clear_fault_codes' non défini dans le profil (section blocks:).")
             continue
         try:
             client.request(block_title)
             print(f"[{name}] codes défauts effacés.")
+            history.log_event(f"Codes défauts effacés ({name}, KW1281)")
         except Exception as exc:  # noqa: BLE001
             print(f"[{name}] erreur : {exc}")
+    input("\nAppuyez sur Entrée pour continuer...")
 
 
-def _handle_live_data(app_config, obd2) -> None:
-    if app_config.interface != "obd2":
+def _handle_live_data(ctx: _MenuContext) -> None:
+    if ctx.app_config.interface != "obd2":
         print("Lecture temps réel : utilisez Programmation > Lire un paramètre ECU "
               "(les valeurs temps réel KKL sont définies comme des paramètres dans le profil véhicule).")
-        return
-    if obd2 is None:
+    elif ctx.obd2 is None:
         print("Non disponible en mode simulation.")
-        return
-    for command in ("RPM", "SPEED", "COOLANT_TEMP"):
-        value = obd2.live_value(command)
-        print(f"{command} = {value}")
+    else:
+        for command in ("RPM", "SPEED", "COOLANT_TEMP"):
+            print(f"{command} = {ctx.obd2.live_value(command)}")
+    input("\nAppuyez sur Entrée pour continuer...")
 
 
-def _handle_actuator(app_config, actuator_ctrl: ActuatorController, obd2) -> None:
+def _handle_actuator(ctx: _MenuContext) -> None:
     name = input("Nom de l'actionneur : ").strip()
-    if app_config.interface == "kkl":
-        print("⚠️  Vitesse non surveillée sur l'interface KKL : vérifiez vous-même que le véhicule est à l'arrêt.")
-    state = obd2.vehicle_state() if obd2 else VehicleState()
-    actuator_ctrl.activate(name, state)
-    print("Test terminé, contrôle rendu à l'ECU.")
+    if ctx.app_config.interface == "kkl":
+        print(YELLOW + "⚠️  Vitesse non surveillée sur l'interface KKL : "
+              "vérifiez vous-même que le véhicule est à l'arrêt." + RESET)
+    state = ctx.obd2.vehicle_state() if ctx.obd2 else VehicleState()
+    ctx.actuator_ctrl.activate(name, state)
+    print(GREEN + "Test terminé, contrôle rendu à l'ECU." + RESET)
+    history.log_event(f"Test actionneur '{name}' ({ctx.app_config.interface})")
+    input("\nAppuyez sur Entrée pour continuer...")
 
 
-def _handle_identification(app_config, obd2, reachable_ecus, kw1281_ecus) -> None:
-    if app_config.interface == "obd2" and obd2 is not None:
-        vin = obd2.live_value("VIN")
+def _handle_identification(ctx: _MenuContext) -> None:
+    if ctx.app_config.interface == "obd2" and ctx.obd2 is not None:
+        vin = ctx.obd2.live_value("VIN")
         if vin:
             print(f"VIN : {vin}")
-    for name, ecu in {**reachable_ecus, **kw1281_ecus}.items():
+    for name, ecu in {**ctx.reachable_ecus, **ctx.kw1281_ecus}.items():
         print(f"{name}: protocole={ecu.protocol}, adresse={ecu.tx_header}")
+    input("\nAppuyez sur Entrée pour continuer...")
+
+
+def _handle_history() -> None:
+    lignes = history.read_recent(20)
+    print(CYAN + BOLD + "=== HISTORIQUE DES ACTIONS ===" + RESET + "\n")
+    if not lignes:
+        print(YELLOW + "Aucune action enregistrée." + RESET)
+    for ligne in lignes:
+        print(GREEN + ligne + RESET)
+    input("\nAppuyez sur Entrée pour continuer...")
 
 
 # --------------------------------------------------------------------------
 # Onglet Programmation
 # --------------------------------------------------------------------------
 
-def _menu_programmation(app_config, parameter_ctrl: ParameterController) -> None:
+def _menu_programmation(ctx: _MenuContext) -> None:
     while True:
-        print(
-            "\n--- PROGRAMMATION ---\n"
-            "1) Lire un paramètre ECU\n"
-            "2) Écrire un paramètre ECU\n"
-            "3) Doc rapide : vocabulaire de codage\n"
-            "4) Retour"
-        )
-        choice = input("> ").strip()
+        clear_screen()
+        lignes = boite_titre("PROGRAMMATION", CYAN, MAGENTA) + [
+            "",
+            GREEN + " [1] " + RESET + "Lire un paramètre ECU",
+            GREEN + " [2] " + RESET + "Écrire un paramètre ECU",
+            GREEN + " [3] " + RESET + "Doc rapide : vocabulaire de codage",
+            YELLOW + " [4] " + RESET + "Retour",
+            "",
+        ]
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
         try:
             if choice == "1":
                 name = input("Nom du paramètre : ").strip()
-                print(f"{name} = {parameter_ctrl.read(name)}")
+                print(f"{name} = {ctx.parameter_ctrl.read(name)}")
+                input("\nAppuyez sur Entrée pour continuer...")
             elif choice == "2":
-                _handle_write_param(app_config, parameter_ctrl)
+                _handle_write_param(ctx)
             elif choice == "3":
+                clear_screen()
                 afficher_doc_codage()
+                input("\nAppuyez sur Entrée pour continuer...")
             elif choice == "4":
                 return
             else:
-                print("Choix invalide.")
+                print(RED + "Choix invalide." + RESET)
+                input("Appuyez sur Entrée pour continuer...")
         except (SafetyViolation, ParameterError) as exc:
-            print(f"Erreur : {exc}")
+            print(RED + f"Erreur : {exc}" + RESET)
+            input("Appuyez sur Entrée pour continuer...")
 
 
-def _handle_write_param(app_config, parameter_ctrl: ParameterController) -> None:
+def _handle_write_param(ctx: _MenuContext) -> None:
     name = input("Nom du paramètre : ").strip()
     value = float(input("Nouvelle valeur : ").strip())
-    if app_config.interface == "kkl":
-        print("⚠️  Vitesse non surveillée sur l'interface KKL : vérifiez vous-même que le véhicule est à l'arrêt.")
-    parameter_ctrl.write(name, value, VehicleState())
-    print("Paramètre écrit et vérifié.")
+    if ctx.app_config.interface == "kkl":
+        print(YELLOW + "⚠️  Vitesse non surveillée sur l'interface KKL : "
+              "vérifiez vous-même que le véhicule est à l'arrêt." + RESET)
+    ctx.parameter_ctrl.write(name, value, VehicleState())
+    print(GREEN + "Paramètre écrit et vérifié." + RESET)
+    history.log_event(f"Paramètre '{name}' = {value} ({ctx.app_config.interface})")
+    input("\nAppuyez sur Entrée pour continuer...")
+
+
+# --------------------------------------------------------------------------
+# Onglet Système (outils Raspberry Pi — distinct de Programmation/ECU)
+# --------------------------------------------------------------------------
+
+def _menu_systeme() -> None:
+    while True:
+        clear_screen()
+        lignes = boite_titre("SYSTEME", GREEN, CYAN) + [
+            "",
+            GREEN + " [1] " + RESET + "Terminal libre (bash)",
+            GREEN + " [2] " + RESET + "Console Python interactive",
+            GREEN + " [3] " + RESET + "Éditer un fichier (nano)",
+            GREEN + " [4] " + RESET + "Informations système",
+            GREEN + " [5] " + RESET + "Mettre à jour le système (apt)",
+            YELLOW + " [6] " + RESET + "Retour",
+            "",
+        ]
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
+        if choice == "1":
+            clear_screen()
+            print(CYAN + "Terminal libre. Tapez 'exit' pour revenir." + RESET)
+            system_tools.ouvrir_shell()
+        elif choice == "2":
+            clear_screen()
+            print(CYAN + "Console Python. Tapez exit() pour revenir." + RESET)
+            system_tools.ouvrir_python_repl()
+        elif choice == "3":
+            nom = input("Nom du fichier : ").strip()
+            if nom:
+                system_tools.editer_fichier(nom)
+        elif choice == "4":
+            clear_screen()
+            print(system_tools.infos_systeme())
+            input("\nAppuyez sur Entrée pour continuer...")
+        elif choice == "5":
+            confirme = input("Lancer la mise à jour ? (oui/non) : ").strip().lower() == "oui"
+            system_tools.mettre_a_jour_systeme(confirme)
+            input("\nAppuyez sur Entrée pour continuer...")
+        elif choice == "6":
+            return
+        else:
+            print(RED + "Choix invalide." + RESET)
+            input("Appuyez sur Entrée pour continuer...")
 
 
 # --------------------------------------------------------------------------
@@ -260,98 +503,235 @@ def _handle_write_param(app_config, parameter_ctrl: ParameterController) -> None
 
 def _menu_internet() -> None:
     while True:
-        print(
-            "\n--- INTERNET ---\n"
-            "1) Statut réseau\n"
-            "2) Lister les réseaux Wi-Fi disponibles\n"
-            "3) Se connecter à un Wi-Fi\n"
-            "4) Retour"
-        )
-        choice = input("> ").strip()
+        clear_screen()
+        lignes = boite_titre("INTERNET", CYAN, MAGENTA) + [
+            "",
+            GREEN + " [1] " + RESET + "Statut réseau",
+            GREEN + " [2] " + RESET + "Lister les réseaux Wi-Fi",
+            GREEN + " [3] " + RESET + "Se connecter à un Wi-Fi",
+            GREEN + " [4] " + RESET + "Configuration Wi-Fi avancée (nmtui)",
+            GREEN + " [5] " + RESET + "Ping une adresse",
+            GREEN + " [6] " + RESET + "Test de débit",
+            GREEN + " [7] " + RESET + "Naviguer",
+            YELLOW + " [8] " + RESET + "Retour",
+            "",
+        ]
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
         if choice == "1":
             status = netinfo.get_status()
             print(f"Nom d'hôte : {status.hostname}")
             print(f"Adresses IP : {', '.join(status.ip_addresses) or '(aucune)'}")
             print(f"Accès Internet : {'oui' if status.internet_reachable else 'non'}")
+            input("\nAppuyez sur Entrée pour continuer...")
         elif choice == "2":
             networks = netinfo.list_wifi_networks()
             if not networks:
                 print("Aucun réseau trouvé (ou nmcli indisponible).")
             for ssid in networks:
                 print(f"  {ssid}")
+            input("\nAppuyez sur Entrée pour continuer...")
         elif choice == "3":
             ssid = input("SSID : ").strip()
             password = input("Mot de passe : ").strip()
             print(netinfo.connect_wifi(ssid, password))
+            input("\nAppuyez sur Entrée pour continuer...")
         elif choice == "4":
+            netinfo.ouvrir_configuration_wifi()
+        elif choice == "5":
+            cible = input("Adresse ou nom de domaine à pinger : ").strip()
+            if cible:
+                clear_screen()
+                netinfo.ping_anime(cible)
+                input("\nAppuyez sur Entrée pour continuer...")
+        elif choice == "6":
+            clear_screen()
+            print(CYAN + "Mesure du débit en cours..." + RESET)
+            mbps = netinfo.mesurer_debit()
+            if mbps is None:
+                print(RED + "Impossible de mesurer le débit (vérifiez la connexion)." + RESET)
+            else:
+                print(GREEN + f"Débit mesuré : {mbps:.1f} Mbps" + RESET)
+                print(YELLOW + netinfo.commentaire_debit(mbps) + RESET)
+            input("\nAppuyez sur Entrée pour continuer...")
+        elif choice == "7":
+            _handle_navigation()
+        elif choice == "8":
             return
         else:
-            print("Choix invalide.")
+            print(RED + "Choix invalide." + RESET)
+            input("Appuyez sur Entrée pour continuer...")
+
+
+def _handle_navigation() -> None:
+    print("1) DuckDuckGo\n2) Wikipédia\n3) Saisir une URL")
+    choix = input(GREEN + "> " + RESET).strip()
+    if choix == "1":
+        netinfo.naviguer("lite.duckduckgo.com")
+    elif choix == "2":
+        netinfo.naviguer("fr.wikipedia.org")
+    elif choix == "3":
+        url = input("URL (sans https://) : ").strip()
+        if url:
+            netinfo.naviguer(url)
 
 
 # --------------------------------------------------------------------------
-# Onglet Paramètres (réglages de l'application)
+# Onglet Paramètres (application + apparence + PIN)
 # --------------------------------------------------------------------------
 
 def _menu_parametres(app_config: AppConfig, app_config_path: str) -> AppConfig:
     while True:
-        print(
-            "\n--- PARAMÈTRES ---\n"
-            f"1) Interface : {app_config.interface} (obd2 = ELM327/CAN, kkl = câble K-line VAG)\n"
-            f"2) Port série : {app_config.port}\n"
-            f"3) Vitesse de liaison (baudrate) : {app_config.baudrate}\n"
-            f"4) Profil véhicule : {app_config.vehicle_profile_path}\n"
-            f"5) Vitesse max autorisée pour actions : {app_config.max_speed_kmh} km/h\n"
-            f"6) Confirmation de sécurité obligatoire : {'oui' if app_config.require_confirmation else 'non'}\n"
-            f"7) Mode simulation : {'oui' if app_config.simulate else 'non'}\n"
-            "8) Enregistrer la configuration\n"
-            "9) Retour"
-        )
-        choice = input("> ").strip()
+        clear_screen()
+        lignes = boite_titre("PARAMETRES", MAGENTA, CYAN) + [
+            "",
+            GREEN + " [1] " + RESET + f"Interface : {app_config.interface}",
+            GREEN + " [2] " + RESET + f"Port série : {app_config.port}",
+            GREEN + " [3] " + RESET + f"Baudrate : {app_config.baudrate}",
+            GREEN + " [4] " + RESET + f"Profil véhicule : {app_config.vehicle_profile_path}",
+            GREEN + " [5] " + RESET + f"Vitesse max autorisée : {app_config.max_speed_kmh} km/h",
+            GREEN + " [6] " + RESET + f"Confirmation de sécurité : {_oui_non(app_config.require_confirmation)}",
+            GREEN + " [7] " + RESET + f"Mode simulation : {_oui_non(app_config.simulate)}",
+            GREEN + " [8] " + RESET + f"Titre du menu : {app_config.titre_menu}",
+            GREEN + " [9] " + RESET + f"Écran de veille : {_oui_non(app_config.veille_active)}",
+            GREEN + " [10] " + RESET + f"Délai avant veille : {app_config.veille_delai}s",
+            GREEN + " [11] " + RESET + f"Type de veille : {app_config.veille_type}",
+            GREEN + " [12] " + RESET + f"Taille de police console : {app_config.police}",
+            GREEN + " [13] " + RESET + f"Démarrage automatique : {_oui_non(app_config.autostart)}",
+            GREEN + " [14] " + RESET + f"Démarrage rapide : {_oui_non(app_config.boot_rapide)}",
+            GREEN + " [15] " + RESET + f"Code PIN : {_oui_non(app_config.pin_active)}",
+            GREEN + " [16] " + RESET + "Enregistrer la configuration",
+            GREEN + " [17] " + RESET + "Réinitialiser tous les paramètres",
+            YELLOW + " [18] " + RESET + "Retour",
+            "",
+        ]
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
+
         if choice == "1":
             value = input(f"Interface ({'/'.join(INTERFACES)}) : ").strip().lower()
             if value in INTERFACES:
                 app_config.interface = value
-                print("Redémarrez l'application pour appliquer ce changement d'interface.")
+                _redemarrage_requis()
             else:
-                print("Valeur invalide.")
+                print(RED + "Valeur invalide." + RESET)
         elif choice == "2":
             new_port = input("Nouveau port (ex: /dev/ttyUSB0) : ").strip()
             if new_port:
                 app_config.port = new_port
-            print("Redémarrez l'application pour appliquer ce changement.")
+                _redemarrage_requis()
         elif choice == "3":
             value = input("Nouveau baudrate : ").strip()
             if value.isdigit():
                 app_config.baudrate = int(value)
-                print("Redémarrez l'application pour appliquer ce changement.")
+                _redemarrage_requis()
             else:
-                print("Valeur invalide.")
+                print(RED + "Valeur invalide." + RESET)
         elif choice == "4":
             new_path = input("Chemin du profil véhicule : ").strip()
             if new_path:
                 app_config.vehicle_profile_path = new_path
-            print("Redémarrez l'application pour charger le nouveau profil.")
+                _redemarrage_requis()
         elif choice == "5":
             value = input("Nouvelle vitesse max (km/h) : ").strip()
             try:
                 app_config.max_speed_kmh = float(value)
-                print("Redémarrez l'application pour appliquer ce changement.")
+                _redemarrage_requis()
             except ValueError:
-                print("Valeur invalide.")
+                print(RED + "Valeur invalide." + RESET)
         elif choice == "6":
             app_config.require_confirmation = not app_config.require_confirmation
-            print("Redémarrez l'application pour appliquer ce changement.")
+            _redemarrage_requis()
         elif choice == "7":
             app_config.simulate = not app_config.simulate
-            print("Redémarrez l'application pour appliquer ce changement.")
+            _redemarrage_requis()
         elif choice == "8":
-            save_app_config(app_config, app_config_path)
-            print(f"Configuration enregistrée dans {app_config_path}.")
+            nouveau = input("Nouveau titre (max 30 caractères) : ").strip()
+            if nouveau:
+                app_config.titre_menu = nouveau[:30]
         elif choice == "9":
+            app_config.veille_active = not app_config.veille_active
+        elif choice == "10":
+            value = input("Nouveau délai en secondes (10-600) : ").strip()
+            if value.isdigit() and 10 <= int(value) <= 600:
+                app_config.veille_delai = int(value)
+            else:
+                print(RED + "Valeur invalide." + RESET)
+        elif choice == "11":
+            print(f"Choix : {' / '.join(VEILLE_TYPES)}")
+            value = input("Type : ").strip().lower()
+            if value in VEILLE_TYPES:
+                app_config.veille_type = value
+            else:
+                print(RED + "Choix invalide." + RESET)
+        elif choice == "12":
+            print(f"Choix : {' / '.join(POLICES)}")
+            value = input("Taille : ").strip().lower()
+            if value in POLICES:
+                app_config.police = value
+                if not system_tools.appliquer_police(value):
+                    print(RED + "Impossible d'appliquer cette police (fichier absent ?)." + RESET)
+            else:
+                print(RED + "Choix invalide." + RESET)
+        elif choice == "13":
+            app_config.autostart = not app_config.autostart
+            system_tools.appliquer_autostart(app_config.autostart)
+        elif choice == "14":
+            app_config.boot_rapide = not app_config.boot_rapide
+        elif choice == "15":
+            _gerer_pin(app_config)
+        elif choice == "16":
+            save_app_config(app_config, app_config_path)
+            print(GREEN + f"Configuration enregistrée dans {app_config_path}." + RESET)
+            input("Appuyez sur Entrée pour continuer...")
+        elif choice == "17":
+            if input("Tapez 'oui' pour réinitialiser tous les paramètres : ").strip().lower() == "oui":
+                defaut = AppConfig()
+                app_config.__dict__.update(defaut.__dict__)
+                system_tools.appliquer_police(app_config.police)
+                system_tools.appliquer_autostart(app_config.autostart)
+                print(GREEN + "Paramètres réinitialisés." + RESET)
+            input("Appuyez sur Entrée pour continuer...")
+        elif choice == "18":
             return app_config
         else:
-            print("Choix invalide.")
+            print(RED + "Choix invalide." + RESET)
+
+
+def _oui_non(valeur: bool) -> str:
+    return "oui" if valeur else "non"
+
+
+def _redemarrage_requis() -> None:
+    print(YELLOW + "Redémarrez l'application pour appliquer ce changement." + RESET)
+
+
+def _gerer_pin(app_config: AppConfig) -> None:
+    if app_config.pin_active:
+        sous_choix = input("1) Changer le PIN  2) Désactiver  (autre = annuler) : ").strip()
+        if sous_choix == "1":
+            _definir_pin(app_config)
+        elif sous_choix == "2":
+            app_config.pin_active = False
+            app_config.pin_hash = ""
+            app_config.pin_salt = ""
+            print(GREEN + "PIN désactivé." + RESET)
+    elif input("Activer un code PIN au démarrage ? (oui/non) : ").strip().lower() == "oui":
+        _definir_pin(app_config)
+        app_config.pin_active = bool(app_config.pin_hash)
+    input("Appuyez sur Entrée pour continuer...")
+
+
+def _definir_pin(app_config: AppConfig) -> None:
+    p1 = getpass.getpass("Nouveau PIN : ")
+    p2 = getpass.getpass("Confirmez le PIN : ")
+    if p1 and p1 == p2:
+        sel = pin_lock.generer_sel()
+        app_config.pin_salt = sel
+        app_config.pin_hash = pin_lock.hash_pin(p1, sel)
+        print(GREEN + "PIN mis à jour." + RESET)
+    else:
+        print(RED + "Les deux codes ne correspondent pas." + RESET)
 
 
 # --------------------------------------------------------------------------
@@ -360,14 +740,18 @@ def _menu_parametres(app_config: AppConfig, app_config_path: str) -> AppConfig:
 
 def _menu_jeux() -> None:
     while True:
-        print(
-            "\n--- JEUX ---\n"
-            "1) Pendu\n"
-            "2) Morpion\n"
-            "3) Plus ou moins\n"
-            "4) Retour"
-        )
-        choice = input("> ").strip()
+        clear_screen()
+        lignes = boite_titre("JEUX", YELLOW, GREEN) + [
+            "",
+            GREEN + " [1] " + RESET + "Pendu",
+            GREEN + " [2] " + RESET + "Morpion",
+            GREEN + " [3] " + RESET + "Plus ou moins",
+            GREEN + " [4] " + RESET + "Serpent",
+            YELLOW + " [5] " + RESET + "Retour",
+            "",
+        ]
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
         if choice == "1":
             games.jouer_pendu()
         elif choice == "2":
@@ -375,6 +759,8 @@ def _menu_jeux() -> None:
         elif choice == "3":
             games.jouer_plus_ou_moins()
         elif choice == "4":
+            games.jouer_serpent()
+        elif choice == "5":
             return
         else:
-            print("Choix invalide.")
+            print(RED + "Choix invalide." + RESET)

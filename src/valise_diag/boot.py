@@ -1,41 +1,45 @@
-"""Écran de démarrage : œuvre ASCII + séquence de chargement avant le menu principal."""
+"""Écran de démarrage : logo en reveal, scroll de logs, barre de progression."""
 from __future__ import annotations
 
-import shutil
-import sys
 import time
 
-ASCII_ART = r"""
-        ______________________
-       /|                    |\
-      / |     VALISE DIAG    | \
-     /__|____________________|__\
-     |    ___    ___    ___    |
-     |   | O |  | O |  | O |   |
-     |   |___|  |___|  |___|   |
-     |__________________________|
-          ||              ||
-         [==]            [==]
+from . import effects
+from .theme import CYAN, GREEN, MAGENTA, YELLOW, clear_screen, print_centre
+
+LOGO = r"""
+   _____ _    _____ _____ ___ _
+  / ____/ \  / ____|_   _/ __| |
+ | |    /   \\___ \ | || |__| |
+ | |___/ /_\ \___) || ||  __| |___
+  \_____\_/ \_\____/ |_||_|  |____|
+        V A L I S E   D I A G
 """
 
-_STEPS = [
-    "Initialisation du matériel...",
-    "Détection de l'interface (OBD2 / KKL)...",
-    "Chargement du profil véhicule...",
-    "Vérification des garde-fous de sécurité...",
-    "Prêt.",
+_LOGS = [
+    "kernel: initialisation des sous-systèmes",
+    "usb: détection des adaptateurs série (ELM327 / KKL)",
+    "diag: pilote UDS (ISO 14229) chargé",
+    "diag: pilote KWP2000 (ISO 14230) chargé",
+    "diag: pilote KW1281 chargé",
+    "fs: profil véhicule chargé",
+    "sys: garde-fous de sécurité activés",
+    "net: interface réseau prête",
+    "sec: verrouillage console vérifié",
+    "core: menu principal prêt",
 ]
 
 
-def show_boot_screen(duration_s: float = 1.5) -> None:
-    width = shutil.get_terminal_size(fallback=(80, 24)).columns
-    print("\n".join(line.center(width) for line in ASCII_ART.splitlines()))
-    print("VALISE DE DIAGNOSTIC OBD2 / KKL".center(width))
+def show_boot_screen(rapide: bool = False) -> None:
+    duree_logs = 0.4 if rapide else 1.6
+    iterations_logo = 3 if rapide else 10
+    duree_barre = 0.4 if rapide else 1.5
+
+    clear_screen()
+    print_centre("CHARGEMENT DES MODULES", YELLOW)
     print()
-    step_delay = max(duration_s / len(_STEPS), 0.05)
-    for step in _STEPS:
-        sys.stdout.write(f"  [..] {step}\r")
-        sys.stdout.flush()
-        time.sleep(step_delay)
-        sys.stdout.write(f"  [OK] {step}\n")
-    time.sleep(0.3)
+    effects.defilement_logs(_LOGS, duree=duree_logs)
+    effects.decrypt_reveal_centre(LOGO, MAGENTA, iterations=iterations_logo, delai=0.03)
+    print()
+    effects.barre_progression(duree_barre, 36, CYAN)
+    print_centre("STATUS: SYSTÈME OPÉRATIONNEL", GREEN)
+    time.sleep(0.2 if rapide else 0.8)

@@ -22,11 +22,30 @@ la couvre) :
 - **lecture/écriture de paramètres ECU** via `ReadDataByIdentifier`/
   `WriteDataByIdentifier` (0x22/0x2E en UDS, 0x21/0x3B en KWP2000).
 
-Le menu est organisé en onglets : **Diagnostic**, **Programmation** (lecture/
-écriture de paramètres + doc rapide sur le vocabulaire de codage),
-**Internet** (statut réseau, Wi-Fi), **Paramètres** (réglages de
-l'application) et **Jeux** (Pendu, Morpion, Plus ou moins) pour patienter
-pendant un diagnostic. Un écran de démarrage s'affiche avant le menu.
+Le menu se présente comme un tableau de bord (heure, IP, CPU/température/RAM/
+disque/Wi-Fi, style cyberdeck) avec un écran de démarrage animé, organisé en
+onglets :
+
+- **Diagnostic** — codes défauts, lecture temps réel, tests actionneurs,
+  identification ECU, historique des actions effectuées sur le véhicule.
+- **Programmation** — lecture/écriture de paramètres ECU + doc rapide sur le
+  vocabulaire de codage.
+- **Internet** — statut réseau, Wi-Fi (liste/connexion/`nmtui`), ping, test de
+  débit, navigateur texte (`w3m`).
+- **Système** — outils Raspberry Pi (shell, console Python, éditeur, infos
+  système, mise à jour) : distinct de Programmation, qui ne touche qu'au
+  véhicule.
+- **Paramètres** — tous les réglages : interface/port/profil véhicule,
+  sécurité, apparence (titre, veille, police console), démarrage automatique,
+  code PIN.
+- **Jeux** — Pendu, Morpion, Plus ou moins, Serpent (`curses`).
+
+Sur un vrai terminal, les touches sont prises en compte immédiatement (pas
+besoin d'Entrée) et un écran de veille (matrix / citations / glitch) se
+déclenche après une période d'inactivité configurable. Deux easter eggs sont
+cachés dans le tableau de bord : tapez `serpent` ou `hack`. Sur une entrée non
+interactive (script, pipe), le menu retombe automatiquement sur un mode
+ligne par ligne classique.
 
 **⚠️ Lisez [`docs/SECURITE.md`](docs/SECURITE.md) avant toute utilisation sur
 un véhicule réel.** Ce projet n'embarque volontairement aucune base de
@@ -92,16 +111,33 @@ src/valise_diag/
   actuators.py   # tests actionneurs, retour de contrôle à l'ECU garanti (UDS et KWP2000)
   parameters.py  # lecture/écriture de paramètres ECU avec vérification (UDS et KWP2000)
   config.py      # chargement/sauvegarde de la config app + du profil véhicule (YAML)
-  boot.py        # écran de démarrage (œuvre ASCII + séquence de chargement)
+  boot.py        # écran de démarrage (logo en reveal, scroll de logs, barre de progression)
   coding_doc.py  # doc rapide : vocabulaire de codage/programmation (onglet Programmation)
-  netinfo.py     # statut réseau, liste et connexion Wi-Fi (onglet Internet)
-  games.py       # Pendu, Morpion, Plus ou moins (onglet Jeux)
-  cli.py         # menu interactif à onglets (Diagnostic / Programmation / Internet / Paramètres / Jeux)
-tests/           # tests unitaires (encodage de trames, garde-fous) — sans matériel
+  netinfo.py     # statut réseau, Wi-Fi, ping, débit, navigation (onglet Internet)
+  system_tools.py # shell/Python/éditeur, infos système, maj, police, autostart (onglet Système)
+  system_status.py # lecture CPU/température/RAM/disque/Wi-Fi pour le tableau de bord
+  pin_lock.py    # verrou par code PIN au démarrage (salé)
+  history.py     # journal des actions de diagnostic (traçabilité)
+  theme.py       # couleurs ANSI, centrage, boîtes — utilisés par tout le menu
+  effects.py     # effets visuels cosmétiques (frappe, reveal, matrix, glitch)
+  screensaver.py # écran de veille après inactivité (Paramètres > veille)
+  easter_eggs.py # mise en scène cachée ("hack") — aucune action réelle
+  games.py       # Pendu, Morpion, Plus ou moins, Serpent (onglet Jeux)
+  cli.py         # tableau de bord + menu à onglets (Diagnostic/Programmation/Internet/Système/Paramètres/Jeux)
+tests/           # tests unitaires (encodage de trames, garde-fous, PIN) — sans matériel
 config/          # exemples de configuration à copier/adapter
 docs/            # câblage, sécurité
-systemd/         # unité systemd optionnelle
+systemd/         # démarrage automatique sur la console (autologin tty1 + .bashrc)
 ```
+
+## Démarrage automatique
+
+Le menu est un programme interactif (clavier, veille) : il ne se lance pas
+comme un service systemd classique en tâche de fond, mais à la connexion sur
+la console physique du Pi (tty1). Voir `systemd/getty-autologin-tty1.conf`
+(connexion automatique) et `systemd/autostart.bashrc.snippet` (à coller dans
+le `~/.bashrc` de l'utilisateur) — l'onglet Paramètres > "Démarrage
+automatique" active/désactive ce mécanisme sans rien réinstaller.
 
 ## Tests
 

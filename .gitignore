@@ -10,3 +10,4 @@ dist/
 # on garde les .example.yaml dans le dépôt, pas les fichiers actifs.
 config/app.yaml
 config/vehicle_profile.yaml
+config/historique.log
