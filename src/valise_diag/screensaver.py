@@ -29,6 +29,8 @@ def ecran_veille(veille_type: str) -> None:
             interrompu = effects.effet_matrix(duree=5.0)
         elif choix == "citations":
             interrompu = effects.galerie_citations(CITATIONS, CYAN)
+        elif choix == "voiture":
+            interrompu = effects.voiture_ascii(duree=6.0)
         else:
             interrompu = effects.glitch_flash()
         if interrompu:
@@ -37,6 +39,6 @@ def ecran_veille(veille_type: str) -> None:
 
 
 def _choisir_effet(veille_type: str) -> str:
-    if veille_type in ("matrix", "citations", "glitch"):
+    if veille_type in ("matrix", "citations", "glitch", "voiture"):
         return veille_type
-    return random.choices(["matrix", "citations", "glitch"], weights=[3, 3, 1])[0]
+    return random.choices(["matrix", "citations", "glitch", "voiture"], weights=[3, 3, 1, 3])[0]

@@ -18,7 +18,7 @@ INTERFACES = ("obd2", "kkl")
 # uds_can needs interface "obd2"; the other two need interface "kkl".
 PROTOCOLS = ("uds_can", "kwp2000_kline", "kw1281")
 
-VEILLE_TYPES = ("matrix", "citations", "glitch", "aleatoire")
+VEILLE_TYPES = ("matrix", "citations", "glitch", "voiture", "aleatoire")
 
 # Console font sizes applied via `setfont` (Linux console, e.g. on the Pi's
 # own HDMI/composite output — irrelevant over SSH). None means "leave as is".

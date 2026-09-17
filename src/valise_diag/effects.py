@@ -15,6 +15,13 @@ from .theme import BOLD, GREEN, RESET, centrer_avec_couleur, clear_screen, haute
 _SYMBOLES_GLITCH = "!@#$%^&*<>/\\|[]{}=+~01"
 _CARACTERES_MATRIX = "01ABCDEFGHIJKLMNOPQRSTUVWXYZ$%#@&*+=<>?"
 
+_VOITURE_ASCII = [
+    "      ______",
+    "     /|_||_\\`.__",
+    "    (   _    _ _\\",
+    "    =`-(_)--(_)-'",
+]
+
 
 def touche_en_attente() -> str | None:
     """Lecture clavier non-bloquante (nécessite un terminal en mode cbreak).
@@ -158,6 +165,42 @@ def galerie_citations(citations: list, couleur: str, duree: float = 3.5) -> bool
         if touche_en_attente():
             return True
         time.sleep(0.05)
+    return False
+
+
+def voiture_ascii(duree: float = 6.0, largeur_max: int = 80, fps: float = 8.0) -> bool:
+    """Petite voiture ASCII qui "roule" sur une route défilante — écran de
+    veille "voiture" (fond d'écran animé, faute de vrai fond d'écran
+    possible sur une console texte). Le défilement est une simple rotation
+    de chaîne (pas de recalcul caractère par caractère) pour rester léger
+    sur un Pi Zero.
+
+    Renvoie True si interrompu par une touche, False si la durée s'est
+    écoulée normalement (voir effet_matrix pour le même contrat)."""
+    largeur = min(largeur_terminal(), largeur_max)
+    motif_route = ("-" * 4 + " " * 2) * (largeur // 6 + 2)
+    delai = 1.0 / fps
+    decalage = 0
+
+    fin = time.time() + duree
+    clear_screen()
+    while time.time() < fin:
+        if touche_en_attente():
+            return True
+
+        hauteur_dispo = max(hauteur_terminal() - len(_VOITURE_ASCII) - 2, 0)
+        lignes = ["\n" * (hauteur_dispo // 2)]
+        for ligne in _VOITURE_ASCII:
+            lignes.append(centrer_avec_couleur(ligne, GREEN, largeur))
+        lignes.append("")
+        route_visible = motif_route[decalage: decalage + largeur]
+        lignes.append(centrer_avec_couleur(route_visible, GREEN, largeur))
+
+        sys.stdout.write("\033[H" + "\n".join(lignes))
+        sys.stdout.flush()
+
+        decalage = (decalage + 1) % 6
+        time.sleep(delai)
     return False
 
 
