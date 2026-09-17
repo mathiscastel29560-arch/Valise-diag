@@ -297,7 +297,8 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             GREEN + " [5] " + RESET + "Identification ECU",
             GREEN + " [6] " + RESET + "Historique des actions",
             GREEN + " [7] " + RESET + "Enregistrer une session (CSV)",
-            YELLOW + " [8] " + RESET + "Retour",
+            GREEN + " [8] " + RESET + "Reconnecter l'adaptateur",
+            YELLOW + " [9] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -318,6 +319,8 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             elif choice == "7":
                 _handle_session_log(ctx)
             elif choice == "8":
+                _handle_reconnexion(ctx)
+            elif choice == "9":
                 return
             else:
                 print(RED + "Choix invalide." + RESET)
@@ -327,18 +330,56 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             input("Appuyez sur Entrée pour continuer...")
 
 
+def _verifier_connexion_vehicule(obd2: Obd2Client) -> bool:
+    """L'adaptateur peut être détecté (port série ouvert) sans que le
+    véhicule ne réponde pour autant — sinon "aucun code défaut" ou une valeur
+    "non disponible" ressemblent à un résultat normal alors qu'il n'y a tout
+    simplement pas eu de dialogue avec l'ECU."""
+    if obd2.is_connected():
+        return True
+    print(RED + "Aucune réponse du véhicule (adaptateur détecté, mais pas de dialogue établi)." + RESET)
+    print("Vérifiez : le contact est mis (pas besoin de démarrer le moteur), l'adaptateur")
+    print("est bien enfoncé dans la prise OBD, puis utilisez Diagnostic > Reconnecter")
+    print("l'adaptateur (la connexion n'est tentée qu'une fois, au démarrage de l'appli).")
+    input("\nAppuyez sur Entrée pour continuer...")
+    return False
+
+
+def _handle_reconnexion(ctx: _MenuContext) -> None:
+    if ctx.app_config.interface != "obd2":
+        print("Reconnexion disponible uniquement sur l'interface OBD2.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if ctx.obd2 is not None:
+        ctx.obd2.close()
+    print(CYAN + "Nouvelle tentative de connexion..." + RESET)
+    try:
+        ctx.obd2 = Obd2Client(ctx.app_config.port, ctx.app_config.baudrate)
+    except Exception as exc:  # noqa: BLE001 - matériel externe, jamais une raison de planter le menu
+        print(RED + f"Échec : {exc}" + RESET)
+        ctx.obd2 = None
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if ctx.obd2.is_connected():
+        print(GREEN + "Connexion au véhicule établie." + RESET)
+    else:
+        print(YELLOW + "Adaptateur détecté mais le véhicule ne répond toujours pas (contact mis ?)." + RESET)
+    input("\nAppuyez sur Entrée pour continuer...")
+
+
 def _handle_read_dtc(ctx: _MenuContext) -> None:
     app_config = ctx.app_config
     if app_config.interface == "obd2":
         if ctx.obd2 is None:
             print("Non disponible en mode simulation.")
-        else:
+            input("\nAppuyez sur Entrée pour continuer...")
+        elif _verifier_connexion_vehicule(ctx.obd2):
             dtcs = ctx.obd2.read_dtcs()
             if not dtcs:
                 print("Aucun code défaut.")
             for dtc in dtcs:
                 print(f"{dtc.code}: {dtc_fr.decrire(dtc.code, dtc.description)}")
-        input("\nAppuyez sur Entrée pour continuer...")
+            input("\nAppuyez sur Entrée pour continuer...")
         return
 
     for name, client in ctx.uds_clients.items():
@@ -369,11 +410,12 @@ def _handle_clear_dtc(ctx: _MenuContext) -> None:
     if app_config.interface == "obd2":
         if ctx.obd2 is None:
             print("Non disponible en mode simulation.")
-        else:
+            input("\nAppuyez sur Entrée pour continuer...")
+        elif _verifier_connexion_vehicule(ctx.obd2):
             ctx.obd2.clear_dtcs()
             print("Codes défauts effacés.")
             history.log_event(f"Codes défauts effacés (OBD2, {ctx.profile.make} {ctx.profile.model})")
-        input("\nAppuyez sur Entrée pour continuer...")
+            input("\nAppuyez sur Entrée pour continuer...")
         return
 
     for name, client in ctx.uds_clients.items():
@@ -408,6 +450,8 @@ def _handle_live_data(ctx: _MenuContext) -> None:
     if ctx.obd2 is None:
         print("Non disponible en mode simulation.")
         input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if not _verifier_connexion_vehicule(ctx.obd2):
         return
 
     while True:
@@ -481,6 +525,8 @@ def _handle_session_log(ctx: _MenuContext) -> None:
     if ctx.obd2 is None:
         print("Non disponible en mode simulation.")
         input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if not _verifier_connexion_vehicule(ctx.obd2):
         return
 
     categories = live_data.categories()
