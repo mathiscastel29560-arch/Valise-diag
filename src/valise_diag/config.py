@@ -93,6 +93,12 @@ class AppConfig:
     interface: str = "obd2"  # "obd2" (ELM327/CAN) or "kkl" (K-line VAG cable)
     port: str = "/dev/ttyUSB0"
     baudrate: int = 38400
+    # Code ATSP ELM327 ("6" = CAN 11 bits/500k, etc., voir elm327.PROTOCOLES_TESTABLES)
+    # à forcer au lieu de laisser l'adaptateur négocier lui-même ("AUTO").
+    # Utile avec certains clones dont l'auto-négociation est buguée : voir
+    # Diagnostic > Diagnostic bas niveau adaptateur, qui peut renseigner ce
+    # champ automatiquement une fois un protocole qui fonctionne trouvé.
+    protocole_obd2: str = "AUTO"
     max_speed_kmh: float = 0.0
     require_confirmation: bool = True
     simulate: bool = False

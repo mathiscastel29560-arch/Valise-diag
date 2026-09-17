@@ -23,7 +23,7 @@ class DtcEntry:
 
 
 class Obd2Client:
-    def __init__(self, port: str, baudrate: int = 38400):
+    def __init__(self, port: str, baudrate: int = 38400, protocole: str = "AUTO"):
         import logging
 
         import obd
@@ -34,7 +34,12 @@ class Obd2Client:
         logging.getLogger("obd").setLevel(logging.CRITICAL)
         logging.getLogger("pint").setLevel(logging.CRITICAL)
 
-        self._connection = obd.OBD(portstr=port, baudrate=baudrate)
+        # "AUTO" laisse python-obd négocier lui-même (ATSP0) ; un code ATSP
+        # explicite ("6", "3", ...) contourne l'auto-négociation, utile avec
+        # les clones ELM327 dont elle est buguée (voir Diagnostic bas niveau
+        # adaptateur, qui détermine ce code sur le véhicule réel).
+        protocol_arg = None if protocole == "AUTO" else protocole
+        self._connection = obd.OBD(portstr=port, baudrate=baudrate, protocol=protocol_arg)
 
     def is_connected(self) -> bool:
         return self._connection.is_connected()

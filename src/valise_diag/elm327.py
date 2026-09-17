@@ -141,3 +141,62 @@ def diagnostiquer_port(port: str, baudrate: int = 38400, timeout_s: float = 2.0)
         ser.close()
 
     return DiagnosticAdaptateur(port=port, baudrate=baudrate, reponse_atz=atz, reponse_atsp0=atsp0, reponse_0100=pid0100)
+
+
+# Codes ATSP (protocole ELM327) couverts par diagnostiquer_protocoles, du plus
+# probable (CAN, véhicules 2008+) au moins probable (protocoles pré-CAN) —
+# certains clones bon marché ont une auto-négociation (ATSP0) buguée qui
+# échoue alors qu'un protocole précis, une fois forcé, fonctionne très bien.
+PROTOCOLES_TESTABLES = [
+    ("6", "CAN 11 bits, 500 kbit/s"),
+    ("7", "CAN 29 bits, 500 kbit/s"),
+    ("8", "CAN 11 bits, 250 kbit/s"),
+    ("9", "CAN 29 bits, 250 kbit/s"),
+    ("3", "ISO 9141-2"),
+    ("4", "ISO 14230-4 KWP2000 (init lent)"),
+    ("5", "ISO 14230-4 KWP2000 (init rapide)"),
+]
+
+
+@dataclass
+class ResultatProtocole:
+    code: str
+    libelle: str
+    reponse_0100: str = ""
+
+    @property
+    def fonctionne(self) -> bool:
+        reponse = self.reponse_0100.upper()
+        if not reponse.strip():
+            return False
+        return not any(mot in reponse for mot in ("NO DATA", "UNABLE TO CONNECT", "ERROR", "?"))
+
+
+def diagnostiquer_protocoles(
+    port: str, baudrate: int = 38400, timeout_s: float = 2.0
+) -> List[ResultatProtocole]:
+    """Force chaque protocole ELM327 un par un (au lieu de laisser
+    l'adaptateur négocier via ATSP0/AUTO) et note lesquels obtiennent une
+    vraie réponse à 0100. Renvoie une liste vide si le port ne s'ouvre pas."""
+    try:
+        ser = serial.Serial(port, baudrate, timeout=timeout_s)
+    except Exception:  # noqa: BLE001 - matériel externe, déjà signalé par diagnostiquer_port
+        return []
+
+    def envoyer(commande: str, attente_s: float) -> str:
+        ser.write((commande + "\r").encode("ascii"))
+        time.sleep(attente_s)
+        return ser.read(500).decode(errors="replace")
+
+    resultats: List[ResultatProtocole] = []
+    try:
+        envoyer("ATZ", 1.0)
+        for code, libelle in PROTOCOLES_TESTABLES:
+            envoyer(f"ATSP{code}", 0.3)
+            reponse = envoyer("0100", 1.5)
+            resultats.append(ResultatProtocole(code=code, libelle=libelle, reponse_0100=reponse))
+            envoyer("ATPC", 0.2)  # ferme le protocole en cours avant d'essayer le suivant
+    finally:
+        ser.close()
+
+    return resultats

@@ -35,7 +35,7 @@ from .boot import show_boot_screen
 from .coding_doc import afficher_doc_codage
 from .config import AppConfig, INTERFACES, POLICES, VEILLE_TYPES, VehicleProfile, save_app_config
 from .dtc import Obd2Client, format_live_value
-from .elm327 import diagnostiquer_port
+from .elm327 import PROTOCOLES_TESTABLES, diagnostiquer_port, diagnostiquer_protocoles
 from .kwp1281 import KWP1281Client
 from .kwp2000 import SID_CLEAR_DIAGNOSTIC_INFORMATION, SID_READ_DTC_BY_STATUS
 from .parameters import ParameterController, ParameterError
@@ -110,7 +110,7 @@ def main(app_config: AppConfig, profile: VehicleProfile, app_config_path: str = 
     obd2 = None
     if app_config.interface == "obd2" and not app_config.simulate:
         try:
-            obd2 = Obd2Client(app_config.port, app_config.baudrate)
+            obd2 = Obd2Client(app_config.port, app_config.baudrate, app_config.protocole_obd2)
         except Exception as exc:  # noqa: BLE001 - matériel externe, jamais une raison de planter le menu
             avertissements.append(f"Connexion OBD2 impossible ({app_config.port}) : {exc}")
 
@@ -358,7 +358,7 @@ def _handle_reconnexion(ctx: _MenuContext) -> None:
         ctx.obd2.close()
     print(CYAN + "Nouvelle tentative de connexion..." + RESET)
     try:
-        ctx.obd2 = Obd2Client(ctx.app_config.port, ctx.app_config.baudrate)
+        ctx.obd2 = Obd2Client(ctx.app_config.port, ctx.app_config.baudrate, ctx.app_config.protocole_obd2)
     except Exception as exc:  # noqa: BLE001 - matériel externe, jamais une raison de planter le menu
         print(RED + f"Échec : {exc}" + RESET)
         ctx.obd2 = None
@@ -402,8 +402,32 @@ def _handle_diagnostic_bas_niveau(ctx: _MenuContext) -> None:
     print()
     if not resultat.adaptateur_repond:
         print(RED + "L'adaptateur ne répond pas : vérifiez le port, le débit (baudrate) et le câble." + RESET)
+        print(CYAN + "\nUtilisez 'Reconnecter l'adaptateur' ensuite pour rétablir la connexion normale." + RESET)
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
     elif not resultat.vehicule_repond:
-        print(YELLOW + "Adaptateur OK, mais le véhicule ne répond pas (contact mis ? câble bien enfoncé ?)." + RESET)
+        print(YELLOW + "Adaptateur OK, mais le véhicule ne répond pas en négociation automatique (ATSP0)." + RESET)
+        print("Certains adaptateurs (notamment les clones bon marché) négocient mal le protocole")
+        print("automatiquement. Test de chaque protocole un par un (quelques secondes)...")
+        resultats_protocoles = diagnostiquer_protocoles(ctx.app_config.port, ctx.app_config.baudrate)
+        fonctionnels = []
+        for r in resultats_protocoles:
+            statut = GREEN + "OK" + RESET if r.fonctionne else RED + "--" + RESET
+            print(f"  ATSP{r.code} ({r.libelle}) : {statut}")
+            if r.fonctionne:
+                fonctionnels.append(r)
+        if fonctionnels:
+            meilleur = fonctionnels[0]
+            print(GREEN + f"\nLe protocole ATSP{meilleur.code} ({meilleur.libelle}) fonctionne !" + RESET)
+            print("Le véhicule répond bien : le souci vient de l'auto-négociation de l'adaptateur,")
+            print("pas du véhicule ni du câblage.")
+            if _confirm(f"Forcer ce protocole (ATSP{meilleur.code}) pour cet adaptateur à l'avenir"):
+                ctx.app_config.protocole_obd2 = meilleur.code
+                save_app_config(ctx.app_config, ctx.app_config_path)
+                print(GREEN + "Enregistré. Utilisez 'Reconnecter l'adaptateur' pour l'appliquer." + RESET)
+        else:
+            print(RED + "\nAucun protocole ne répond : le véhicule ne dialogue pas (contact mis ?" + RESET)
+            print(RED + "câble bien enfoncé au fond du connecteur OBD ?)." + RESET)
     else:
         print(GREEN + "Adaptateur et véhicule répondent correctement." + RESET)
     print(CYAN + "\nUtilisez 'Reconnecter l'adaptateur' ensuite pour rétablir la connexion normale." + RESET)
@@ -922,21 +946,22 @@ def _menu_parametres(app_config: AppConfig, app_config_path: str) -> AppConfig:
             GREEN + " [1] " + RESET + f"Interface : {app_config.interface}",
             GREEN + " [2] " + RESET + f"Port série : {app_config.port}",
             GREEN + " [3] " + RESET + f"Baudrate : {app_config.baudrate}",
-            GREEN + " [4] " + RESET + f"Profil véhicule : {app_config.vehicle_profile_path}",
-            GREEN + " [5] " + RESET + f"Vitesse max autorisée : {app_config.max_speed_kmh} km/h",
-            GREEN + " [6] " + RESET + f"Confirmation de sécurité : {_oui_non(app_config.require_confirmation)}",
-            GREEN + " [7] " + RESET + f"Mode simulation : {_oui_non(app_config.simulate)}",
-            GREEN + " [8] " + RESET + f"Titre du menu : {app_config.titre_menu}",
-            GREEN + " [9] " + RESET + f"Écran de veille : {_oui_non(app_config.veille_active)}",
-            GREEN + " [10] " + RESET + f"Délai avant veille : {app_config.veille_delai}s",
-            GREEN + " [11] " + RESET + f"Type de veille : {app_config.veille_type}",
-            GREEN + " [12] " + RESET + f"Taille de police console : {app_config.police}",
-            GREEN + " [13] " + RESET + f"Démarrage automatique : {_oui_non(app_config.autostart)}",
-            GREEN + " [14] " + RESET + f"Démarrage rapide : {_oui_non(app_config.boot_rapide)}",
-            GREEN + " [15] " + RESET + f"Code PIN : {_oui_non(app_config.pin_active)}",
-            GREEN + " [16] " + RESET + "Enregistrer la configuration",
-            GREEN + " [17] " + RESET + "Réinitialiser tous les paramètres",
-            YELLOW + " [18] " + RESET + "Retour",
+            GREEN + " [4] " + RESET + f"Protocole ELM327 : {app_config.protocole_obd2}",
+            GREEN + " [5] " + RESET + f"Profil véhicule : {app_config.vehicle_profile_path}",
+            GREEN + " [6] " + RESET + f"Vitesse max autorisée : {app_config.max_speed_kmh} km/h",
+            GREEN + " [7] " + RESET + f"Confirmation de sécurité : {_oui_non(app_config.require_confirmation)}",
+            GREEN + " [8] " + RESET + f"Mode simulation : {_oui_non(app_config.simulate)}",
+            GREEN + " [9] " + RESET + f"Titre du menu : {app_config.titre_menu}",
+            GREEN + " [10] " + RESET + f"Écran de veille : {_oui_non(app_config.veille_active)}",
+            GREEN + " [11] " + RESET + f"Délai avant veille : {app_config.veille_delai}s",
+            GREEN + " [12] " + RESET + f"Type de veille : {app_config.veille_type}",
+            GREEN + " [13] " + RESET + f"Taille de police console : {app_config.police}",
+            GREEN + " [14] " + RESET + f"Démarrage automatique : {_oui_non(app_config.autostart)}",
+            GREEN + " [15] " + RESET + f"Démarrage rapide : {_oui_non(app_config.boot_rapide)}",
+            GREEN + " [16] " + RESET + f"Code PIN : {_oui_non(app_config.pin_active)}",
+            GREEN + " [17] " + RESET + "Enregistrer la configuration",
+            GREEN + " [18] " + RESET + "Réinitialiser tous les paramètres",
+            YELLOW + " [19] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -962,40 +987,51 @@ def _menu_parametres(app_config: AppConfig, app_config_path: str) -> AppConfig:
             else:
                 print(RED + "Valeur invalide." + RESET)
         elif choice == "4":
-            _menu_profil_vehicule(app_config)
+            codes_valides = ["AUTO"] + [code for code, _ in PROTOCOLES_TESTABLES]
+            print("AUTO = négociation automatique par l'adaptateur (par défaut).")
+            for code, libelle in PROTOCOLES_TESTABLES:
+                print(f"  {code} = {libelle}")
+            value = input("Protocole (AUTO ou un des codes ci-dessus) : ").strip().upper()
+            if value in codes_valides:
+                app_config.protocole_obd2 = value
+                _redemarrage_requis()
+            else:
+                print(RED + "Valeur invalide." + RESET)
         elif choice == "5":
+            _menu_profil_vehicule(app_config)
+        elif choice == "6":
             value = input("Nouvelle vitesse max (km/h) : ").strip()
             try:
                 app_config.max_speed_kmh = float(value)
                 _redemarrage_requis()
             except ValueError:
                 print(RED + "Valeur invalide." + RESET)
-        elif choice == "6":
+        elif choice == "7":
             app_config.require_confirmation = not app_config.require_confirmation
             _redemarrage_requis()
-        elif choice == "7":
+        elif choice == "8":
             app_config.simulate = not app_config.simulate
             _redemarrage_requis()
-        elif choice == "8":
+        elif choice == "9":
             nouveau = input("Nouveau titre (max 30 caractères) : ").strip()
             if nouveau:
                 app_config.titre_menu = nouveau[:30]
-        elif choice == "9":
-            app_config.veille_active = not app_config.veille_active
         elif choice == "10":
+            app_config.veille_active = not app_config.veille_active
+        elif choice == "11":
             value = input("Nouveau délai en secondes (10-600) : ").strip()
             if value.isdigit() and 10 <= int(value) <= 600:
                 app_config.veille_delai = int(value)
             else:
                 print(RED + "Valeur invalide." + RESET)
-        elif choice == "11":
+        elif choice == "12":
             print(f"Choix : {' / '.join(VEILLE_TYPES)}")
             value = input("Type : ").strip().lower()
             if value in VEILLE_TYPES:
                 app_config.veille_type = value
             else:
                 print(RED + "Choix invalide." + RESET)
-        elif choice == "12":
+        elif choice == "13":
             print(f"Choix : {' / '.join(POLICES)}")
             value = input("Taille : ").strip().lower()
             if value in POLICES:
@@ -1004,18 +1040,18 @@ def _menu_parametres(app_config: AppConfig, app_config_path: str) -> AppConfig:
                     print(RED + "Impossible d'appliquer cette police (fichier absent ?)." + RESET)
             else:
                 print(RED + "Choix invalide." + RESET)
-        elif choice == "13":
+        elif choice == "14":
             app_config.autostart = not app_config.autostart
             system_tools.appliquer_autostart(app_config.autostart)
-        elif choice == "14":
-            app_config.boot_rapide = not app_config.boot_rapide
         elif choice == "15":
-            _gerer_pin(app_config)
+            app_config.boot_rapide = not app_config.boot_rapide
         elif choice == "16":
+            _gerer_pin(app_config)
+        elif choice == "17":
             save_app_config(app_config, app_config_path)
             print(GREEN + f"Configuration enregistrée dans {app_config_path}." + RESET)
             input("Appuyez sur Entrée pour continuer...")
-        elif choice == "17":
+        elif choice == "18":
             if input("Tapez 'oui' pour réinitialiser tous les paramètres : ").strip().lower() == "oui":
                 defaut = AppConfig()
                 app_config.__dict__.update(defaut.__dict__)
@@ -1023,7 +1059,7 @@ def _menu_parametres(app_config: AppConfig, app_config_path: str) -> AppConfig:
                 system_tools.appliquer_autostart(app_config.autostart)
                 print(GREEN + "Paramètres réinitialisés." + RESET)
             input("Appuyez sur Entrée pour continuer...")
-        elif choice == "18":
+        elif choice == "19":
             return app_config
         else:
             print(RED + "Choix invalide." + RESET)
