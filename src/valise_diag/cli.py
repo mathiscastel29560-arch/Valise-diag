@@ -78,6 +78,11 @@ class _MenuContext:
 
 
 def main(app_config: AppConfig, profile: VehicleProfile, app_config_path: str = "config/app.yaml") -> None:
+    # setfont (system_tools.appliquer_police) n'est pas persistant : le noyau
+    # revient à la police console par défaut à chaque redémarrage, il faut
+    # donc réappliquer le choix enregistré à chaque lancement, pas seulement
+    # quand l'utilisateur le change depuis Paramètres.
+    system_tools.appliquer_police(app_config.police)
     show_boot_screen(rapide=app_config.boot_rapide)
 
     if app_config.pin_active and app_config.pin_hash:
