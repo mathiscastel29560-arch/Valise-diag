@@ -60,6 +60,7 @@ from .theme import (
     afficher_bloc_centre,
     boite_titre,
     clear_screen,
+    definir_decalage_vertical,
     print_centre,
 )
 from .transport import build_diagnostic_clients, build_kw1281_clients
@@ -91,6 +92,7 @@ def main(app_config: AppConfig, profile: VehicleProfile, app_config_path: str = 
     # donc réappliquer le choix enregistré à chaque lancement, pas seulement
     # quand l'utilisateur le change depuis Paramètres.
     system_tools.appliquer_police(app_config.police)
+    definir_decalage_vertical(app_config.decalage_vertical)
     show_boot_screen(rapide=app_config.boot_rapide)
 
     if app_config.pin_active and app_config.pin_hash:
@@ -1349,12 +1351,13 @@ def _menu_parametres(app_config: AppConfig, app_config_path: str) -> AppConfig:
             GREEN + " [11] " + RESET + f"Délai avant veille : {app_config.veille_delai}s",
             GREEN + " [12] " + RESET + f"Type de veille : {app_config.veille_type}",
             GREEN + " [13] " + RESET + f"Taille de police console : {app_config.police}",
-            GREEN + " [14] " + RESET + f"Démarrage automatique : {_oui_non(app_config.autostart)}",
-            GREEN + " [15] " + RESET + f"Démarrage rapide : {_oui_non(app_config.boot_rapide)}",
-            GREEN + " [16] " + RESET + f"Code PIN : {_oui_non(app_config.pin_active)}",
-            GREEN + " [17] " + RESET + "Enregistrer la configuration",
-            GREEN + " [18] " + RESET + "Réinitialiser tous les paramètres",
-            YELLOW + " [19] " + RESET + "Retour",
+            GREEN + " [14] " + RESET + f"Décalage vertical de l'affichage : {app_config.decalage_vertical}",
+            GREEN + " [15] " + RESET + f"Démarrage automatique : {_oui_non(app_config.autostart)}",
+            GREEN + " [16] " + RESET + f"Démarrage rapide : {_oui_non(app_config.boot_rapide)}",
+            GREEN + " [17] " + RESET + f"Code PIN : {_oui_non(app_config.pin_active)}",
+            GREEN + " [18] " + RESET + "Enregistrer la configuration",
+            GREEN + " [19] " + RESET + "Réinitialiser tous les paramètres",
+            YELLOW + " [20] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -1434,25 +1437,33 @@ def _menu_parametres(app_config: AppConfig, app_config_path: str) -> AppConfig:
             else:
                 print(RED + "Choix invalide." + RESET)
         elif choice == "14":
+            value = input("Décalage vertical (négatif = vers le haut, positif = vers le bas) : ").strip()
+            try:
+                app_config.decalage_vertical = int(value)
+                definir_decalage_vertical(app_config.decalage_vertical)
+            except ValueError:
+                print(RED + "Valeur invalide (nombre entier attendu)." + RESET)
+        elif choice == "15":
             app_config.autostart = not app_config.autostart
             system_tools.appliquer_autostart(app_config.autostart)
-        elif choice == "15":
-            app_config.boot_rapide = not app_config.boot_rapide
         elif choice == "16":
-            _gerer_pin(app_config)
+            app_config.boot_rapide = not app_config.boot_rapide
         elif choice == "17":
+            _gerer_pin(app_config)
+        elif choice == "18":
             save_app_config(app_config, app_config_path)
             print(GREEN + f"Configuration enregistrée dans {app_config_path}." + RESET)
             input("Appuyez sur Entrée pour continuer...")
-        elif choice == "18":
+        elif choice == "19":
             if input("Tapez 'oui' pour réinitialiser tous les paramètres : ").strip().lower() == "oui":
                 defaut = AppConfig()
                 app_config.__dict__.update(defaut.__dict__)
                 system_tools.appliquer_police(app_config.police)
+                definir_decalage_vertical(app_config.decalage_vertical)
                 system_tools.appliquer_autostart(app_config.autostart)
                 print(GREEN + "Paramètres réinitialisés." + RESET)
             input("Appuyez sur Entrée pour continuer...")
-        elif choice == "19":
+        elif choice == "20":
             return app_config
         else:
             print(RED + "Choix invalide." + RESET)

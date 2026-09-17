@@ -111,6 +111,10 @@ class AppConfig:
     veille_delai: int = 60  # seconds of inactivity before the screensaver kicks in
     veille_type: str = "aleatoire"  # one of VEILLE_TYPES
     police: str = "defaut"  # one of POLICES
+    # Décale l'affichage vers le haut (négatif) ou le bas (positif) par
+    # rapport au centrage automatique — certains écrans (overscan, etc.)
+    # affichent le menu trop bas/haut même avec la bonne police.
+    decalage_vertical: int = 0
     autostart: bool = True
     pin_active: bool = False
     pin_hash: str = ""

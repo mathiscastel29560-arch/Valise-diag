@@ -64,6 +64,19 @@ def print_centre(texte: str, couleur: str = "") -> None:
     sys.stdout.flush()
 
 
+_decalage_vertical = 0
+
+
+def definir_decalage_vertical(lignes: int) -> None:
+    """Décale l'affichage vers le haut (valeur négative) ou le bas (valeur
+    positive) par rapport au centrage automatique — certains écrans
+    physiques (overscan, résolution qui ne correspond pas à ce que la
+    console croit avoir comme hauteur) affichent le menu trop bas/haut même
+    une fois la police ajustée ; voir Paramètres > Décalage vertical."""
+    global _decalage_vertical
+    _decalage_vertical = lignes
+
+
 def afficher_bloc_centre(lignes: Iterable[str], effacer: bool = True) -> None:
     """Dessine un bloc de lignes centré en une seule écriture (au lieu d'un
     print() par ligne) : sur un Pi Zero, notamment via une console série, ça
@@ -71,7 +84,7 @@ def afficher_bloc_centre(lignes: Iterable[str], effacer: bool = True) -> None:
     """
     lignes = list(lignes)
     taille = shutil.get_terminal_size((80, 24))  # un seul appel pour largeur + hauteur
-    marge_haut = max((taille.lines - len(lignes)) // 2, 0)
+    marge_haut = max((taille.lines - len(lignes)) // 2 + _decalage_vertical, 0)
     parties = ["\033[2J\033[H"] if effacer else []
     parties.append("\n" * marge_haut)
     for ligne in lignes:
