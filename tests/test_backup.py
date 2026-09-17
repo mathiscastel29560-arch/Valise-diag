@@ -52,3 +52,15 @@ def test_lister_sauvegardes_trie_du_plus_recent(tmp_path, monkeypatch):
 
     assert len(resultat) == 2
     assert resultat[0].name == deuxieme.name
+
+
+def test_creer_sauvegarde_deux_fois_dans_la_meme_seconde_ne_s_ecrase_pas(tmp_path, monkeypatch):
+    _preparer_config(tmp_path, monkeypatch)
+    dossier = tmp_path / "config" / "sauvegardes"
+
+    premiere = backup.creer_sauvegarde(dossier=dossier)
+    deuxieme = backup.creer_sauvegarde(dossier=dossier)
+
+    assert premiere != deuxieme
+    assert premiere.exists()
+    assert deuxieme.exists()

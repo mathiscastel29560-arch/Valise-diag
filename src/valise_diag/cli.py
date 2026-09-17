@@ -9,6 +9,7 @@ import getpass
 import os
 import select
 import sys
+import tarfile
 import termios
 import time
 import tty
@@ -1076,8 +1077,11 @@ def _menu_sauvegarde_configuration() -> None:
         afficher_bloc_centre(lignes)
         choice = input(GREEN + "> " + RESET).strip()
         if choice == "1":
-            chemin = backup.creer_sauvegarde()
-            print(GREEN + f"Sauvegarde créée : {chemin}" + RESET)
+            try:
+                chemin = backup.creer_sauvegarde()
+                print(GREEN + f"Sauvegarde créée : {chemin}" + RESET)
+            except (OSError, tarfile.TarError) as exc:
+                print(RED + f"Sauvegarde impossible : {exc}" + RESET)
             input("\nAppuyez sur Entrée pour continuer...")
         elif choice == "2":
             _handle_restaurer_sauvegarde()
@@ -1109,7 +1113,7 @@ def _handle_restaurer_sauvegarde() -> None:
     try:
         backup.restaurer_sauvegarde(chemin)
         print(GREEN + "Sauvegarde restaurée. Redémarrez l'appli pour l'appliquer." + RESET)
-    except OSError as exc:
+    except (OSError, tarfile.TarError) as exc:
         print(RED + f"Restauration impossible : {exc}" + RESET)
     input("\nAppuyez sur Entrée pour continuer...")
 

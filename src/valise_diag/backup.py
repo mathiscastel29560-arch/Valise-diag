@@ -29,6 +29,13 @@ def creer_sauvegarde(dossier: Path = DOSSIER_SAUVEGARDES) -> Path:
     dossier.mkdir(parents=True, exist_ok=True)
     horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
     chemin = dossier / f"sauvegarde_{horodatage}.tar.gz"
+    # L'horodatage n'a qu'une résolution à la seconde : deux sauvegardes
+    # créées dans la même seconde écraseraient sinon silencieusement la
+    # première.
+    compteur = 2
+    while chemin.exists():
+        chemin = dossier / f"sauvegarde_{horodatage}_{compteur}.tar.gz"
+        compteur += 1
     with tarfile.open(chemin, "w:gz") as archive:
         for fichier in FICHIERS_A_SAUVEGARDER:
             if fichier.exists():
@@ -49,4 +56,13 @@ def restaurer_sauvegarde(chemin: Path, destination: Path = Path(".")) -> None:
     """Écrase les fichiers de config actuels avec ceux de l'archive —
     l'appelant est responsable de confirmer avant d'appeler ceci."""
     with tarfile.open(chemin, "r:gz") as archive:
-        archive.extractall(destination, filter="data")
+        try:
+            archive.extractall(destination, filter="data")
+        except TypeError:
+            # Le paramètre `filter` (PEP 706) n'existe que depuis
+            # Python 3.9.17/3.10.12/3.11.4/3.12 — sur une version plus
+            # ancienne (ex. Raspberry Pi OS Bullseye, Python 3.9.2), on
+            # retombe sur l'extraction classique, sans ce filtrage de
+            # sécurité supplémentaire (ces archives ne viennent que de la
+            # valise elle-même, jamais d'une source externe non fiable).
+            archive.extractall(destination)
