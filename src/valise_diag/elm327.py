@@ -190,12 +190,16 @@ def diagnostiquer_protocoles(
 
     resultats: List[ResultatProtocole] = []
     try:
-        envoyer("ATZ", 1.0)
         for code, libelle in PROTOCOLES_TESTABLES:
+            # ATZ (reset complet) avant chaque essai plutôt qu'un simple ATPC
+            # ("protocol close") entre deux tentatives : certains clones bon
+            # marché implémentent mal ATPC et restent bloqués dans l'état du
+            # protocole précédent, faussant l'essai suivant. ATZ est la
+            # commande la plus basique et la plus universellement supportée.
+            envoyer("ATZ", 1.0)
             envoyer(f"ATSP{code}", 0.3)
             reponse = envoyer("0100", 1.5)
             resultats.append(ResultatProtocole(code=code, libelle=libelle, reponse_0100=reponse))
-            envoyer("ATPC", 0.2)  # ferme le protocole en cours avant d'essayer le suivant
     finally:
         ser.close()
 

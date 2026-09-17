@@ -426,8 +426,14 @@ def _handle_diagnostic_bas_niveau(ctx: _MenuContext) -> None:
                 save_app_config(ctx.app_config, ctx.app_config_path)
                 print(GREEN + "Enregistré. Utilisez 'Reconnecter l'adaptateur' pour l'appliquer." + RESET)
         else:
-            print(RED + "\nAucun protocole ne répond : le véhicule ne dialogue pas (contact mis ?" + RESET)
-            print(RED + "câble bien enfoncé au fond du connecteur OBD ?)." + RESET)
+            print(RED + "\nAucun protocole ne répond : le véhicule ne dialogue pas." + RESET)
+            print("Vérifications physiques avant de suspecter l'adaptateur lui-même :")
+            print("  - contact mis (pas juste les warnings, le tableau de bord complet allumé)")
+            print("  - le connecteur OBD est enfoncé jusqu'au bout, rien ne bouge une fois en place")
+            print("  - la diode de l'adaptateur s'allume au branchement (signe qu'il reçoit du +12V)")
+            print("  - pas de broches tordues/corrodées dans le connecteur OBD du véhicule")
+            print("Si tout est correct malgré ça, l'adaptateur (pas seulement son auto-négociation)")
+            print("est probablement en cause : essayez-le sur un autre véhicule si possible pour trancher.")
     else:
         print(GREEN + "Adaptateur et véhicule répondent correctement." + RESET)
     print(CYAN + "\nUtilisez 'Reconnecter l'adaptateur' ensuite pour rétablir la connexion normale." + RESET)
