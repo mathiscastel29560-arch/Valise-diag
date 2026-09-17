@@ -48,6 +48,7 @@ CATALOGUE: Dict[str, List[Tuple[str, str]]] = {
         ("SHORT_FUEL_TRIM_2", "Correction carburant court terme — banc 2"),
         ("LONG_FUEL_TRIM_2", "Correction carburant long terme — banc 2"),
         ("ETHANOL_PERCENT", "Taux d'éthanol"),
+        ("COMMANDED_EQUIV_RATIO", "Richesse du mélange commandée (λ — 1.0 = stœchiométrique)"),
     ],
     CATEGORIE_ECHAPPEMENT: [
         ("O2_B1S1", "Sonde O2 — banc 1 capteur 1"),

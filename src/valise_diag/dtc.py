@@ -92,6 +92,7 @@ _UNITES_COURTES = {
     "gps": "g/s",
     "liters_per_hour": "L/h",
     "count": "",
+    "ratio": "λ",
 }
 
 

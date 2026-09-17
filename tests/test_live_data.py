@@ -23,6 +23,7 @@ def test_format_live_value_formats_known_units_compactly():
     assert format_live_value(15.5 * obd.Unit.percent) == "15.5 %"
     assert format_live_value(900 * obd.Unit.rpm) == "900 tr/min"
     assert format_live_value(obd.Unit.Quantity(90, obd.Unit.celsius)) == "90 °C"
+    assert format_live_value(1.02 * obd.Unit.ratio) == "1.02 λ"
 
 
 def test_format_live_value_falls_back_to_str_for_plain_values():
