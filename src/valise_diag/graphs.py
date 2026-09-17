@@ -37,6 +37,7 @@ PARAMETRES_PAR_DEFAUT: List[Tuple[str, str]] = [
     ("FUEL_RAIL_PRESSURE_DIRECT", "Pression rail injection"),
     ("FUEL_RATE", "Débit carburant (proxy puiss.)"),
     ("TIMING_ADVANCE", "Avance allumage (essence)"),
+    ("COMMANDED_EGR", "EGR commandée (diesel)"),
 ]
 
 
