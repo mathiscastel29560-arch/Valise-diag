@@ -9,12 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from . import netscan, profiles, session_log
+from . import backup, netscan, profiles, session_log
 
 DOSSIERS_SURVEILLES: Dict[str, Path] = {
     "Sessions CSV": session_log.DOSSIER_LOGS,
     "Rapports de scan réseau": netscan.DOSSIER_RAPPORTS,
     "Profils véhicule": profiles.DOSSIER_PROFILS,
+    "Sauvegardes de configuration": backup.DOSSIER_SAUVEGARDES,
 }
 
 

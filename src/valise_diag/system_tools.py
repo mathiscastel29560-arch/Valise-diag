@@ -8,6 +8,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Tuple
 
 from .config import POLICES
 from .theme import GREEN, RESET
@@ -70,6 +71,32 @@ def infos_systeme() -> str:
         lignes.append("Uptime : non disponible")
 
     return "\n".join(lignes)
+
+
+def mettre_a_jour_valise() -> Tuple[bool, str]:
+    """Lance `git pull` dans le dépôt de la valise, sans rien forcer (pas de
+    reset/merge automatique) : en cas de conflit ou de dépôt cassé, `git
+    pull` échoue proprement et le message d'erreur est renvoyé tel quel —
+    évite d'avoir à ressortir un ordinateur en SSH pour une mise à jour de
+    routine."""
+    try:
+        toplevel = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if toplevel.returncode != 0:
+            return False, toplevel.stderr.strip() or "Impossible de localiser le dépôt Git."
+        racine = toplevel.stdout.strip()
+        resultat = subprocess.run(
+            ["git", "pull"], cwd=racine, capture_output=True, text=True, timeout=60
+        )
+    except Exception as exc:  # noqa: BLE001 - opération système externe, message brut utile tel quel
+        return False, str(exc)
+    sortie = (resultat.stdout + resultat.stderr).strip()
+    return resultat.returncode == 0, sortie
 
 
 def mettre_a_jour_systeme(confirmer: bool) -> None:

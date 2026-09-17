@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from . import (
+    backup,
     consommation,
     dtc_fr,
     easter_eggs,
@@ -943,9 +944,11 @@ def _menu_systeme() -> None:
             GREEN + " [2] " + RESET + "Console Python interactive",
             GREEN + " [3] " + RESET + "Éditer un fichier (nano)",
             GREEN + " [4] " + RESET + "Gestionnaire de fichiers",
-            GREEN + " [5] " + RESET + "Informations système",
-            GREEN + " [6] " + RESET + "Mettre à jour le système (apt)",
-            YELLOW + " [7] " + RESET + "Retour",
+            GREEN + " [5] " + RESET + "Sauvegarde de configuration",
+            GREEN + " [6] " + RESET + "Mettre à jour la valise (git pull)",
+            GREEN + " [7] " + RESET + "Informations système",
+            GREEN + " [8] " + RESET + "Mettre à jour le système (apt)",
+            YELLOW + " [9] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -965,14 +968,25 @@ def _menu_systeme() -> None:
         elif choice == "4":
             _menu_gestionnaire_fichiers()
         elif choice == "5":
+            _menu_sauvegarde_configuration()
+        elif choice == "6":
+            print(CYAN + "Récupération des dernières mises à jour..." + RESET)
+            succes, sortie = system_tools.mettre_a_jour_valise()
+            print(sortie or "(aucune sortie)")
+            if succes:
+                print(GREEN + "\nMise à jour terminée. Redémarrez l'appli (ou le Pi) pour l'appliquer." + RESET)
+            else:
+                print(RED + "\nLa mise à jour a échoué — voir le message ci-dessus." + RESET)
+            input("\nAppuyez sur Entrée pour continuer...")
+        elif choice == "7":
             clear_screen()
             print(system_tools.infos_systeme())
             input("\nAppuyez sur Entrée pour continuer...")
-        elif choice == "6":
+        elif choice == "8":
             confirme = input("Lancer la mise à jour ? (oui/non) : ").strip().lower() == "oui"
             system_tools.mettre_a_jour_systeme(confirme)
             input("\nAppuyez sur Entrée pour continuer...")
-        elif choice == "7":
+        elif choice == "9":
             return
         else:
             print(RED + "Choix invalide." + RESET)
@@ -1032,10 +1046,13 @@ def _menu_action_fichier(chemin: Path) -> None:
     choice = input(GREEN + "> " + RESET).strip()
     if choice == "1":
         clear_screen()
-        try:
-            print(chemin.read_text(encoding="utf-8", errors="replace"))
-        except OSError as exc:
-            print(RED + f"Impossible de lire le fichier : {exc}" + RESET)
+        if chemin.name.endswith((".tar.gz", ".gz", ".zip")):
+            print(YELLOW + "Fichier binaire (archive) — non affichable ici." + RESET)
+        else:
+            try:
+                print(chemin.read_text(encoding="utf-8", errors="replace"))
+            except OSError as exc:
+                print(RED + f"Impossible de lire le fichier : {exc}" + RESET)
         input("\nAppuyez sur Entrée pour continuer...")
     elif choice == "2":
         if _confirm(f"Supprimer définitivement '{chemin.name}'"):
@@ -1045,6 +1062,56 @@ def _menu_action_fichier(chemin: Path) -> None:
             except (OSError, ValueError) as exc:
                 print(RED + f"Suppression impossible : {exc}" + RESET)
             input("\nAppuyez sur Entrée pour continuer...")
+
+
+def _menu_sauvegarde_configuration() -> None:
+    while True:
+        lignes = boite_titre("SAUVEGARDE CONFIGURATION", GREEN, CYAN) + [
+            "",
+            GREEN + " [1] " + RESET + "Créer une sauvegarde maintenant",
+            GREEN + " [2] " + RESET + "Restaurer une sauvegarde",
+            YELLOW + " [3] " + RESET + "Retour",
+            "",
+        ]
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
+        if choice == "1":
+            chemin = backup.creer_sauvegarde()
+            print(GREEN + f"Sauvegarde créée : {chemin}" + RESET)
+            input("\nAppuyez sur Entrée pour continuer...")
+        elif choice == "2":
+            _handle_restaurer_sauvegarde()
+        elif choice == "3":
+            return
+        else:
+            print(RED + "Choix invalide." + RESET)
+            input("Appuyez sur Entrée pour continuer...")
+
+
+def _handle_restaurer_sauvegarde() -> None:
+    sauvegardes = backup.lister_sauvegardes()
+    if not sauvegardes:
+        print("Aucune sauvegarde disponible pour l'instant.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    print("Quelle sauvegarde restaurer ?")
+    for i, chemin in enumerate(sauvegardes, start=1):
+        date = time.strftime("%Y-%m-%d %H:%M", time.localtime(chemin.stat().st_mtime))
+        print(f"  [{i}] {chemin.name} ({date})")
+    choix = input(GREEN + "> " + RESET).strip()
+    if not (choix.isdigit() and 1 <= int(choix) <= len(sauvegardes)):
+        print(RED + "Choix invalide." + RESET)
+        input("Appuyez sur Entrée pour continuer...")
+        return
+    chemin = sauvegardes[int(choix) - 1]
+    if not _confirm(f"Restaurer '{chemin.name}' — écrase la configuration actuelle"):
+        return
+    try:
+        backup.restaurer_sauvegarde(chemin)
+        print(GREEN + "Sauvegarde restaurée. Redémarrez l'appli pour l'appliquer." + RESET)
+    except OSError as exc:
+        print(RED + f"Restauration impossible : {exc}" + RESET)
+    input("\nAppuyez sur Entrée pour continuer...")
 
 
 # --------------------------------------------------------------------------
