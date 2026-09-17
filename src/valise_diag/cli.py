@@ -13,11 +13,13 @@ import termios
 import time
 import tty
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from . import (
     dtc_fr,
     easter_eggs,
+    file_manager,
     games,
     history,
     live_data,
@@ -770,9 +772,10 @@ def _menu_systeme() -> None:
             GREEN + " [1] " + RESET + "Terminal libre (bash)",
             GREEN + " [2] " + RESET + "Console Python interactive",
             GREEN + " [3] " + RESET + "Éditer un fichier (nano)",
-            GREEN + " [4] " + RESET + "Informations système",
-            GREEN + " [5] " + RESET + "Mettre à jour le système (apt)",
-            YELLOW + " [6] " + RESET + "Retour",
+            GREEN + " [4] " + RESET + "Gestionnaire de fichiers",
+            GREEN + " [5] " + RESET + "Informations système",
+            GREEN + " [6] " + RESET + "Mettre à jour le système (apt)",
+            YELLOW + " [7] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -790,18 +793,88 @@ def _menu_systeme() -> None:
             if nom:
                 system_tools.editer_fichier(nom)
         elif choice == "4":
+            _menu_gestionnaire_fichiers()
+        elif choice == "5":
             clear_screen()
             print(system_tools.infos_systeme())
             input("\nAppuyez sur Entrée pour continuer...")
-        elif choice == "5":
+        elif choice == "6":
             confirme = input("Lancer la mise à jour ? (oui/non) : ").strip().lower() == "oui"
             system_tools.mettre_a_jour_systeme(confirme)
             input("\nAppuyez sur Entrée pour continuer...")
-        elif choice == "6":
+        elif choice == "7":
             return
         else:
             print(RED + "Choix invalide." + RESET)
             input("Appuyez sur Entrée pour continuer...")
+
+
+def _menu_gestionnaire_fichiers() -> None:
+    while True:
+        categories = list(file_manager.DOSSIERS_SURVEILLES.keys())
+        lignes = boite_titre("GESTIONNAIRE DE FICHIERS", GREEN, CYAN) + [""]
+        for i, nom in enumerate(categories, start=1):
+            lignes.append(GREEN + f" [{i}] " + RESET + nom)
+        lignes.append(YELLOW + f" [{len(categories) + 1}] " + RESET + "Retour")
+        lignes.append("")
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
+        if choice == str(len(categories) + 1):
+            return
+        if not (choice.isdigit() and 1 <= int(choice) <= len(categories)):
+            print(RED + "Choix invalide." + RESET)
+            input("Appuyez sur Entrée pour continuer...")
+            continue
+        _menu_dossier(categories[int(choice) - 1], file_manager.DOSSIERS_SURVEILLES[categories[int(choice) - 1]])
+
+
+def _menu_dossier(nom_categorie: str, dossier: Path) -> None:
+    while True:
+        fichiers = file_manager.lister(dossier)
+        lignes = boite_titre(nom_categorie.upper()[:38], GREEN, CYAN) + [""]
+        if not fichiers:
+            lignes.append("Aucun fichier pour l'instant.")
+        for i, (chemin, taille, mtime) in enumerate(fichiers, start=1):
+            date = time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime))
+            lignes.append(f" [{i}] {chemin.name}  ({file_manager.formater_taille(taille)}, {date})")
+        lignes.append(YELLOW + f" [{len(fichiers) + 1}] " + RESET + "Retour")
+        lignes.append("")
+        afficher_bloc_centre(lignes)
+        choice = input(GREEN + "> " + RESET).strip()
+        if choice == str(len(fichiers) + 1):
+            return
+        if not (choice.isdigit() and 1 <= int(choice) <= len(fichiers)):
+            print(RED + "Choix invalide." + RESET)
+            input("Appuyez sur Entrée pour continuer...")
+            continue
+        _menu_action_fichier(fichiers[int(choice) - 1][0])
+
+
+def _menu_action_fichier(chemin: Path) -> None:
+    lignes = boite_titre(chemin.name[:38], GREEN, CYAN) + [
+        "",
+        GREEN + " [1] " + RESET + "Voir le contenu",
+        RED + " [2] " + RESET + "Supprimer",
+        YELLOW + " [3] " + RESET + "Retour",
+        "",
+    ]
+    afficher_bloc_centre(lignes)
+    choice = input(GREEN + "> " + RESET).strip()
+    if choice == "1":
+        clear_screen()
+        try:
+            print(chemin.read_text(encoding="utf-8", errors="replace"))
+        except OSError as exc:
+            print(RED + f"Impossible de lire le fichier : {exc}" + RESET)
+        input("\nAppuyez sur Entrée pour continuer...")
+    elif choice == "2":
+        if _confirm(f"Supprimer définitivement '{chemin.name}'"):
+            try:
+                file_manager.supprimer(chemin)
+                print(GREEN + "Fichier supprimé." + RESET)
+            except (OSError, ValueError) as exc:
+                print(RED + f"Suppression impossible : {exc}" + RESET)
+            input("\nAppuyez sur Entrée pour continuer...")
 
 
 # --------------------------------------------------------------------------
