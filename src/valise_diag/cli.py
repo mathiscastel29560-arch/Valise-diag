@@ -91,10 +91,13 @@ def main(app_config: AppConfig, profile: VehicleProfile, app_config_path: str = 
 
     uds_clients: Dict[str, object] = {}
     kw1281_clients: Dict[str, KWP1281Client] = {}
+    avertissements: List[str] = []
     if not app_config.simulate or app_config.interface == "obd2":
-        uds_clients = build_diagnostic_clients(app_config, profile)
+        uds_clients, avert_uds = build_diagnostic_clients(app_config, profile)
+        avertissements += avert_uds
     if app_config.interface == "kkl":
-        kw1281_clients = build_kw1281_clients(app_config, profile)
+        kw1281_clients, avert_kw1281 = build_kw1281_clients(app_config, profile)
+        avertissements += avert_kw1281
 
     reachable_ecus = {ecu.name: ecu for ecu in profile.ecus if ecu.name in uds_clients}
     kw1281_ecus = {ecu.name: ecu for ecu in profile.ecus if ecu.name in kw1281_clients}
@@ -104,7 +107,17 @@ def main(app_config: AppConfig, profile: VehicleProfile, app_config_path: str = 
 
     obd2 = None
     if app_config.interface == "obd2" and not app_config.simulate:
-        obd2 = Obd2Client(app_config.port, app_config.baudrate)
+        try:
+            obd2 = Obd2Client(app_config.port, app_config.baudrate)
+        except Exception as exc:  # noqa: BLE001 - matériel externe, jamais une raison de planter le menu
+            avertissements.append(f"Connexion OBD2 impossible ({app_config.port}) : {exc}")
+
+    if avertissements:
+        print_centre("⚠️  Certains éléments ne sont pas joignables pour l'instant :", YELLOW)
+        for avertissement in avertissements:
+            print_centre(avertissement, YELLOW)
+        print_centre("Le menu reste utilisable ; reconnectez le matériel puis redémarrez si besoin.", CYAN)
+        time.sleep(2.0)
 
     ctx = _MenuContext(
         app_config=app_config,

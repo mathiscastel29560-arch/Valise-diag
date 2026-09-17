@@ -24,7 +24,15 @@ class DtcEntry:
 
 class Obd2Client:
     def __init__(self, port: str, baudrate: int = 38400):
+        import logging
+
         import obd
+
+        # python-obd (et pint, qu'il charge) écrivent leurs propres messages
+        # directement sur la console — bruyant et redondant avec nos propres
+        # messages d'erreur affichés dans le menu (voir transport.py/cli.py).
+        logging.getLogger("obd").setLevel(logging.CRITICAL)
+        logging.getLogger("pint").setLevel(logging.CRITICAL)
 
         self._connection = obd.OBD(portstr=port, baudrate=baudrate)
 
