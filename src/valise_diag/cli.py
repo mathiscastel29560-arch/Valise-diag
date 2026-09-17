@@ -36,6 +36,7 @@ from .coding_doc import afficher_doc_codage
 from .config import AppConfig, INTERFACES, POLICES, VEILLE_TYPES, VehicleProfile, save_app_config
 from .dtc import Obd2Client, format_live_value
 from .elm327 import PROTOCOLES_TESTABLES, diagnostiquer_port, diagnostiquer_protocoles
+from .graphs import boucle_graphiques
 from .kwp1281 import KWP1281Client
 from .kwp2000 import SID_CLEAR_DIAGNOSTIC_INFORMATION, SID_READ_DTC_BY_STATUS
 from .parameters import ParameterController, ParameterError
@@ -294,13 +295,14 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             GREEN + " [1] " + RESET + "Lire les codes défauts",
             GREEN + " [2] " + RESET + "Effacer les codes défauts",
             GREEN + " [3] " + RESET + "Lecture temps réel",
-            GREEN + " [4] " + RESET + "Tester un actionneur",
-            GREEN + " [5] " + RESET + "Identification ECU",
-            GREEN + " [6] " + RESET + "Historique des actions",
-            GREEN + " [7] " + RESET + "Enregistrer une session (CSV)",
-            GREEN + " [8] " + RESET + "Reconnecter l'adaptateur",
-            GREEN + " [9] " + RESET + "Diagnostic bas niveau adaptateur",
-            YELLOW + " [10] " + RESET + "Retour",
+            GREEN + " [4] " + RESET + "Graphiques temps réel",
+            GREEN + " [5] " + RESET + "Tester un actionneur",
+            GREEN + " [6] " + RESET + "Identification ECU",
+            GREEN + " [7] " + RESET + "Historique des actions",
+            GREEN + " [8] " + RESET + "Enregistrer une session (CSV)",
+            GREEN + " [9] " + RESET + "Reconnecter l'adaptateur",
+            GREEN + " [10] " + RESET + "Diagnostic bas niveau adaptateur",
+            YELLOW + " [11] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -313,18 +315,20 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             elif choice == "3":
                 _handle_live_data(ctx)
             elif choice == "4":
-                _handle_actuator(ctx)
+                _handle_graphiques(ctx)
             elif choice == "5":
-                _handle_identification(ctx)
+                _handle_actuator(ctx)
             elif choice == "6":
-                _handle_history()
+                _handle_identification(ctx)
             elif choice == "7":
-                _handle_session_log(ctx)
+                _handle_history()
             elif choice == "8":
-                _handle_reconnexion(ctx)
+                _handle_session_log(ctx)
             elif choice == "9":
-                _handle_diagnostic_bas_niveau(ctx)
+                _handle_reconnexion(ctx)
             elif choice == "10":
+                _handle_diagnostic_bas_niveau(ctx)
+            elif choice == "11":
                 return
             else:
                 print(RED + "Choix invalide." + RESET)
@@ -548,6 +552,23 @@ def _handle_live_data(ctx: _MenuContext) -> None:
             continue
         print(RED + "Choix invalide." + RESET)
         input("Appuyez sur Entrée pour continuer...")
+
+
+def _handle_graphiques(ctx: _MenuContext) -> None:
+    if ctx.app_config.interface != "obd2":
+        print("Graphiques disponibles uniquement sur l'interface OBD2.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if ctx.obd2 is None:
+        print("Non disponible en mode simulation.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if not _verifier_connexion_vehicule(ctx.obd2):
+        return
+    print(CYAN + "Il n'existe pas de PID OBD-II standard pour la puissance moteur (ça se" + RESET)
+    print(CYAN + "mesure sur un banc) : régime et charge moteur servent de proxys de tendance." + RESET)
+    input("Appuyez sur Entrée pour lancer les graphiques...")
+    boucle_graphiques(ctx.obd2)
 
 
 def _afficher_valeurs(obd2: Obd2Client, commandes: List[Tuple[str, str]]) -> None:
