@@ -1,0 +1,55 @@
+# Profil véhicule — Renault Clio 4 (X98) 1.5 dCi 90 (2012) — SQUELETTE.
+#
+# Contrairement à config/vehicle_profile.example.yaml (générique), les
+# adresses ci-dessous sont pré-remplies quand elles sont confirmées par une
+# source publique vérifiable (le code source de ddt4all, cité en commentaire).
+# Tout le reste (DID, bits de configuration confort) est volontairement
+# laissé en exemple commenté : voir docs/CODAGE_CLIO4.md pour le détail de ce
+# qui a été trouvé et pourquoi ça ne peut pas être pré-rempli sans risque —
+# aucune valeur confirmée n'existe encore pour un Clio 4 phase 1 diesel de
+# 2012-2015 (les seules confirmations trouvées viennent de modèles 2016+
+# avec une version logicielle d'UCH différente).
+#
+# Copiez ce fichier vers config/vehicle_profile.yaml (ou utilisez Paramètres
+# > Profil véhicule) puis complétez au fur et à mesure que vous confirmez des
+# valeurs avec ddt4all sur votre propre véhicule.
+
+make: "Renault"
+model: "Clio 4 (X98)"
+year: 2012
+
+ecus:
+  - name: "moteur_can"
+    protocol: "uds_can"
+    tx_header: "7E0"   # EXEMPLE générique ISO 15765-4 — à confirmer pour le K9K de cette Clio
+    rx_header: "7E8"   # EXEMPLE générique — à confirmer
+
+    actuators: []
+    parameters: []
+
+  # UCH (Unité Centrale Habitacle) — gère le confort (verrouillage, éclairage,
+  # vitres...). Code d'adressage "26" confirmé dans la table du projet
+  # "[X98] - Renault Clio IV" du code source de ddt4all (src/ddt4all/resources
+  # /projects.json) — mais c'est un identifiant interne à ddt4all, PAS
+  # forcément l'adresse CAN de diagnostic réelle (tx_header/rx_header) : à
+  # relever vous-même dans ddt4all une fois connecté, puis à reporter ici.
+  - name: "confort_uch"
+    protocol: "uds_can"
+    tx_header: "A_CONFIRMER"  # volontairement invalide : échec net si utilisé avant d'être rempli
+    rx_header: "A_CONFIRMER"
+
+    # EXEMPLE — voir docs/CODAGE_CLIO4.md. Aucune valeur confirmée pour ce
+    # véhicule à ce jour : ne décommentez qu'après vérification via ddt4all.
+    # actuators:
+    #   - name: "verrouillage_auto_roulage"
+    #     description: "Verrouillage automatique des portes en roulant"
+    #     did: "A_CONFIRMER"
+    #     control_parameter: 0x03
+    #     on_state: "01"
+    #     off_state: "00"
+    #     max_duration_s: 1.0
+    #     requires_engine_off: false
+    #     requires_stationary: false
+    actuators: []
+
+    parameters: []
