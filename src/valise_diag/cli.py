@@ -6,6 +6,7 @@ classique plutôt que d'échouer sur un ioctl impossible."""
 from __future__ import annotations
 
 import getpass
+import os
 import select
 import sys
 import termios
@@ -236,14 +237,21 @@ def _boucle_interactive(ctx: _MenuContext) -> None:
         while True:
             _afficher_dashboard(ctx)
             pret, _, _ = select.select([sys.stdin], [], [], 1.0)
-            touche = sys.stdin.read(1) if pret else None
+            # Lecture directe sur le descripteur de fichier, pas sys.stdin.read() :
+            # le TextIOWrapper de sys.stdin bufferise en interne, et un octet "en
+            # trop" (ex: le \n tapé après une touche) peut rester coincé dans ce
+            # buffer Python sans que le flush termios (TCSAFLUSH) ne le voie — il
+            # vole alors la lecture suivante. os.read() n'a pas ce problème.
+            touche = os.read(fd, 1).decode(errors="replace") if pret else None
 
             if touche is None:
                 app_config = ctx.app_config
                 if app_config.veille_active and time.time() - dernier_input > app_config.veille_delai:
-                    termios.tcsetattr(fd, termios.TCSADRAIN, reglages_normaux)
+                    # Pas de retour en mode "normal" ici : la veille lit le clavier
+                    # sans bloquer (via select), ce qui a besoin du mode cbreak déjà
+                    # actif. Y basculer en mode ligne avant l'appel forçait à taper
+                    # une touche PUIS Entrée pour en sortir.
                     screensaver.ecran_veille(app_config.veille_type)
-                    tty.setcbreak(fd)
                     dernier_input = time.time()
                 continue
             dernier_input = time.time()
@@ -254,17 +262,20 @@ def _boucle_interactive(ctx: _MenuContext) -> None:
                 games.jouer_serpent()
                 tty.setcbreak(fd)
                 secret = ""
+                dernier_input = time.time()
                 continue
             if secret.endswith("hack"):
                 termios.tcsetattr(fd, termios.TCSADRAIN, reglages_normaux)
                 easter_eggs.sequence_piratage()
                 tty.setcbreak(fd)
                 secret = ""
+                dernier_input = time.time()
                 continue
 
             termios.tcsetattr(fd, termios.TCSADRAIN, reglages_normaux)
             continuer = _dispatch(touche, ctx)
             tty.setcbreak(fd)
+            dernier_input = time.time()
             if not continuer:
                 return
     finally:

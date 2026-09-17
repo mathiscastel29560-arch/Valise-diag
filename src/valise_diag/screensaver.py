@@ -21,13 +21,17 @@ def ecran_veille(veille_type: str) -> None:
         if effects.touche_en_attente():
             break
         choix = _choisir_effet(veille_type)
+        # Chaque effet lit lui-même le clavier pour s'interrompre plus tôt et
+        # renvoie True s'il a consommé une touche : on se fie à cette valeur
+        # plutôt que de revérifier le clavier ici, qui ne trouverait plus rien
+        # (déjà lu) et laisserait repartir un cycle entier pour rien.
         if choix == "matrix":
-            effects.effet_matrix(duree=5.0)
+            interrompu = effects.effet_matrix(duree=5.0)
         elif choix == "citations":
-            effects.galerie_citations(CITATIONS, CYAN)
+            interrompu = effects.galerie_citations(CITATIONS, CYAN)
         else:
-            effects.glitch_flash()
-        if effects.touche_en_attente():
+            interrompu = effects.glitch_flash()
+        if interrompu:
             break
     clear_screen()
 
