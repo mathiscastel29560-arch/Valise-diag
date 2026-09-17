@@ -8,6 +8,7 @@ KKL/paramètres ECU n'est pas couvert ici.
 from __future__ import annotations
 
 import csv
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -17,11 +18,21 @@ from .dtc import valeur_numerique
 
 DOSSIER_LOGS = Path("config/logs")
 
+_CARACTERE_INVALIDE = re.compile(r"[^A-Za-z0-9_-]+")
 
-def chemin_session(dossier: Path = DOSSIER_LOGS) -> Path:
+
+def _nom_fichier_vehicule(vehicule: str) -> str:
+    """Convertit un nom de véhicule libre (ex: "Renault Clio 4 (X98)") en un
+    nom de fichier sûr : espaces -> underscore, tout le reste retiré."""
+    slug = _CARACTERE_INVALIDE.sub("", vehicule.strip().replace(" ", "_"))
+    return slug or "vehicule"
+
+
+def chemin_session(dossier: Path = DOSSIER_LOGS, vehicule: Optional[str] = None) -> Path:
     dossier.mkdir(parents=True, exist_ok=True)
     horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return dossier / f"session_{horodatage}.csv"
+    prefixe = f"session_{_nom_fichier_vehicule(vehicule)}" if vehicule else "session"
+    return dossier / f"{prefixe}_{horodatage}.csv"
 
 
 def enregistrer(

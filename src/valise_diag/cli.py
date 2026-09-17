@@ -29,6 +29,7 @@ from . import (
     session_log,
     system_status,
     system_tools,
+    vehicle_id,
 )
 from .actuators import ActuatorController, ActuatorError
 from .boot import show_boot_screen
@@ -303,11 +304,12 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             GREEN + " [4] " + RESET + "Graphiques temps réel",
             GREEN + " [5] " + RESET + "Tester un actionneur",
             GREEN + " [6] " + RESET + "Identification ECU",
-            GREEN + " [7] " + RESET + "Historique des actions",
-            GREEN + " [8] " + RESET + "Enregistrer une session (CSV)",
-            GREEN + " [9] " + RESET + "Reconnecter l'adaptateur",
-            GREEN + " [10] " + RESET + "Diagnostic bas niveau adaptateur",
-            YELLOW + " [11] " + RESET + "Retour",
+            GREEN + " [7] " + RESET + "Détection véhicule (marque + logo)",
+            GREEN + " [8] " + RESET + "Historique des actions",
+            GREEN + " [9] " + RESET + "Enregistrer une session (CSV)",
+            GREEN + " [10] " + RESET + "Reconnecter l'adaptateur",
+            GREEN + " [11] " + RESET + "Diagnostic bas niveau adaptateur",
+            YELLOW + " [12] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -326,14 +328,16 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             elif choice == "6":
                 _handle_identification(ctx)
             elif choice == "7":
-                _handle_history()
+                _handle_detection_vehicule(ctx)
             elif choice == "8":
-                _handle_session_log(ctx)
+                _handle_history()
             elif choice == "9":
-                _handle_reconnexion(ctx)
+                _handle_session_log(ctx)
             elif choice == "10":
-                _handle_diagnostic_bas_niveau(ctx)
+                _handle_reconnexion(ctx)
             elif choice == "11":
+                _handle_diagnostic_bas_niveau(ctx)
+            elif choice == "12":
                 return
             else:
                 print(RED + "Choix invalide." + RESET)
@@ -596,6 +600,34 @@ def _handle_actuator(ctx: _MenuContext) -> None:
     input("\nAppuyez sur Entrée pour continuer...")
 
 
+def _handle_detection_vehicule(ctx: _MenuContext) -> None:
+    """Rassemble ce qu'on peut savoir du véhicule : VIN, constructeur déduit
+    du WMI (les 3 premiers caractères du VIN — standard public ISO 3780,
+    jamais une supposition sur le modèle/l'année, propriétaires au
+    constructeur), profil configuré localement, et les ECU joignables."""
+    vin = None
+    if ctx.app_config.interface == "obd2" and ctx.obd2 is not None:
+        vin = ctx.obd2.live_value("VIN")
+
+    marque = vehicle_id.marque_depuis_vin(vin)
+    print(GREEN + vehicle_id.logo_ascii(marque) + RESET)
+    print(BOLD + "=== DÉTECTION VÉHICULE ===" + RESET)
+    print(f"VIN                 : {vin or 'non disponible'}")
+    print(f"Constructeur (WMI)  : {marque or 'inconnu (WMI absent de la table)'}")
+    print(f"Profil configuré    : {ctx.profile.make} {ctx.profile.model} {ctx.profile.year}")
+    print(f"Interface           : {ctx.app_config.interface.upper()}")
+    if ctx.app_config.interface == "obd2":
+        print(f"Protocole ELM327    : {ctx.app_config.protocole_obd2}")
+    print()
+    print(BOLD + "ECU joignables :" + RESET)
+    ecus = {**ctx.reachable_ecus, **ctx.kw1281_ecus}
+    if not ecus:
+        print("  Aucun.")
+    for name, ecu in ecus.items():
+        print(f"  {name}: protocole={ecu.protocol}, adresse={ecu.tx_header}")
+    input("\nAppuyez sur Entrée pour continuer...")
+
+
 def _handle_identification(ctx: _MenuContext) -> None:
     if ctx.app_config.interface == "obd2" and ctx.obd2 is not None:
         vin = ctx.obd2.live_value("VIN")
@@ -656,7 +688,9 @@ def _handle_session_log(ctx: _MenuContext) -> None:
         sys.stdout.write(f"\r  {tick} mesure(s) enregistrée(s)...")
         sys.stdout.flush()
 
-    chemin = session_log.enregistrer(ctx.obd2, commandes, duree_s, sur_tick=afficher_avancement)
+    nom_vehicule = f"{ctx.profile.make}_{ctx.profile.model}_{ctx.profile.year}"
+    chemin = session_log.chemin_session(vehicule=nom_vehicule)
+    chemin = session_log.enregistrer(ctx.obd2, commandes, duree_s, chemin=chemin, sur_tick=afficher_avancement)
     print()
     print(GREEN + f"Session enregistrée dans {chemin}" + RESET)
     history.log_event(f"Session CSV enregistrée : {chemin}")

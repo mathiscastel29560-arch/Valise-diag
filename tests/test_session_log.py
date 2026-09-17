@@ -1,4 +1,5 @@
 import csv
+import re
 
 from valise_diag import session_log
 
@@ -42,3 +43,14 @@ def test_enregistrer_respecte_la_duree(tmp_path):
     with open(chemin, newline="", encoding="utf-8") as f:
         lignes = list(csv.reader(f))
     assert len(lignes) >= 2  # au moins l'entête + une mesure
+
+
+def test_chemin_session_inclut_le_nom_du_vehicule(tmp_path):
+    chemin = session_log.chemin_session(dossier=tmp_path, vehicule="Renault Clio_4 (X98)")
+    assert chemin.name.startswith("session_Renault_Clio_4_X98_")
+    assert chemin.suffix == ".csv"
+
+
+def test_chemin_session_sans_vehicule_reste_generique(tmp_path):
+    chemin = session_log.chemin_session(dossier=tmp_path)
+    assert re.fullmatch(r"session_\d{8}_\d{6}\.csv", chemin.name)
