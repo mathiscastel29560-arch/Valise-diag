@@ -9,6 +9,11 @@ def test_all_catalogue_commands_exist_in_python_obd():
     assert unknown == []
 
 
+def test_all_pids_entretien_exist_in_python_obd():
+    unknown = [name for name, _ in live_data.PIDS_ENTRETIEN if getattr(obd.commands, name, None) is None]
+    assert unknown == []
+
+
 def test_categories_are_not_empty():
     for categorie in live_data.categories():
         assert live_data.commands_for(categorie), categorie
@@ -34,3 +39,18 @@ def test_valeur_numerique_extracts_magnitude():
     assert valeur_numerique(42 * obd.Unit.kPa) == 42
     assert valeur_numerique(None) is None
     assert valeur_numerique("P0301") == "P0301"
+
+
+def test_valeur_anormale_hors_bornes():
+    assert live_data.valeur_anormale("COOLANT_TEMP", 115) is True
+    assert live_data.valeur_anormale("COOLANT_TEMP", 90) is False
+    assert live_data.valeur_anormale("CONTROL_MODULE_VOLTAGE", 9.5) is True
+    assert live_data.valeur_anormale("CONTROL_MODULE_VOLTAGE", 12.5) is False
+
+
+def test_valeur_anormale_parametre_sans_seuil_jamais_signale():
+    assert live_data.valeur_anormale("RPM", 999999) is False
+
+
+def test_valeur_anormale_valeur_manquante_jamais_signalee():
+    assert live_data.valeur_anormale("COOLANT_TEMP", None) is False

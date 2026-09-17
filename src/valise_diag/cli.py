@@ -305,11 +305,12 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             GREEN + " [5] " + RESET + "Tester un actionneur",
             GREEN + " [6] " + RESET + "Identification ECU",
             GREEN + " [7] " + RESET + "Détection véhicule (marque + logo)",
-            GREEN + " [8] " + RESET + "Historique des actions",
-            GREEN + " [9] " + RESET + "Enregistrer une session (CSV)",
-            GREEN + " [10] " + RESET + "Reconnecter l'adaptateur",
-            GREEN + " [11] " + RESET + "Diagnostic bas niveau adaptateur",
-            YELLOW + " [12] " + RESET + "Retour",
+            GREEN + " [8] " + RESET + "Entretien (depuis effacement codes)",
+            GREEN + " [9] " + RESET + "Historique des actions",
+            GREEN + " [10] " + RESET + "Enregistrer une session (CSV)",
+            GREEN + " [11] " + RESET + "Reconnecter l'adaptateur",
+            GREEN + " [12] " + RESET + "Diagnostic bas niveau adaptateur",
+            YELLOW + " [13] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -330,14 +331,16 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             elif choice == "7":
                 _handle_detection_vehicule(ctx)
             elif choice == "8":
-                _handle_history()
+                _handle_entretien(ctx)
             elif choice == "9":
-                _handle_session_log(ctx)
+                _handle_history()
             elif choice == "10":
-                _handle_reconnexion(ctx)
+                _handle_session_log(ctx)
             elif choice == "11":
-                _handle_diagnostic_bas_niveau(ctx)
+                _handle_reconnexion(ctx)
             elif choice == "12":
+                _handle_diagnostic_bas_niveau(ctx)
+            elif choice == "13":
                 return
             else:
                 print(RED + "Choix invalide." + RESET)
@@ -554,10 +557,10 @@ def _handle_live_data(ctx: _MenuContext) -> None:
         if choice == str(len(categories) + 2):
             return
         if choice == str(len(categories) + 1):
-            _afficher_valeurs(ctx.obd2, live_data.all_commands())
+            live_data.boucle_lecture_temps_reel(ctx.obd2, live_data.all_commands())
             continue
         if choice.isdigit() and 1 <= int(choice) <= len(categories):
-            _afficher_valeurs(ctx.obd2, live_data.commands_for(categories[int(choice) - 1]))
+            live_data.boucle_lecture_temps_reel(ctx.obd2, live_data.commands_for(categories[int(choice) - 1]))
             continue
         print(RED + "Choix invalide." + RESET)
         input("Appuyez sur Entrée pour continuer...")
@@ -578,14 +581,6 @@ def _handle_graphiques(ctx: _MenuContext) -> None:
     print(CYAN + "mesure sur un banc) : régime et charge moteur servent de proxys de tendance." + RESET)
     input("Appuyez sur Entrée pour lancer les graphiques...")
     boucle_graphiques(ctx.obd2)
-
-
-def _afficher_valeurs(obd2: Obd2Client, commandes: List[Tuple[str, str]]) -> None:
-    clear_screen()
-    for command_name, label in commandes:
-        valeur = format_live_value(obd2.live_value(command_name))
-        print(f"{label} : {valeur}")
-    input("\nAppuyez sur Entrée pour continuer...")
 
 
 def _handle_actuator(ctx: _MenuContext) -> None:
@@ -625,6 +620,24 @@ def _handle_detection_vehicule(ctx: _MenuContext) -> None:
         print("  Aucun.")
     for name, ecu in ecus.items():
         print(f"  {name}: protocole={ecu.protocol}, adresse={ecu.tx_header}")
+    input("\nAppuyez sur Entrée pour continuer...")
+
+
+def _handle_entretien(ctx: _MenuContext) -> None:
+    if ctx.app_config.interface != "obd2" or ctx.obd2 is None:
+        print("Disponible uniquement sur l'interface OBD2, hors mode simulation.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if not _verifier_connexion_vehicule(ctx.obd2):
+        return
+    print(BOLD + "=== ENTRETIEN — DEPUIS LE DERNIER EFFACEMENT DES CODES ===" + RESET)
+    for nom, label in live_data.PIDS_ENTRETIEN:
+        valeur = format_live_value(ctx.obd2.live_value(nom))
+        print(f"{label:<42}: {valeur}")
+    print()
+    print(YELLOW + "L'intervalle d'entretien (vidange, révision...) n'est pas un PID OBD-II" + RESET)
+    print(YELLOW + "standard : il n'est pas exposé génériquement, contrairement aux valeurs" + RESET)
+    print(YELLOW + "ci-dessus, qui elles le sont (norme SAE J1979)." + RESET)
     input("\nAppuyez sur Entrée pour continuer...")
 
 

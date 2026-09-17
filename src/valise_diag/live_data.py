@@ -10,7 +10,15 @@ au-dessus de la pression atmosphérique quand le turbo souffle.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+import sys
+import termios
+import time
+import tty
+from typing import Dict, List, Optional, Tuple
+
+from . import effects
+from .dtc import format_live_value, valeur_numerique
+from .theme import CYAN, GREEN, MAGENTA, RED, RESET, YELLOW, afficher_bloc_centre, boite_titre
 
 CATEGORIE_MOTEUR = "Moteur"
 CATEGORIE_ADMISSION = "Admission / suralimentation"
@@ -79,3 +87,87 @@ def all_commands() -> List[Tuple[str, str]]:
     for commandes in CATALOGUE.values():
         result.extend(commandes)
     return result
+
+
+# Seuils indicatifs génériques (bas, haut) — pas des limites constructeur ni
+# un régime moteur "rouge" (ça dépend du moteur) : juste des bornes de bon
+# sens, dans l'esprit de ce qu'affichent en rouge les applis OBD généralistes
+# (ex: tension batterie/alternateur, corrections carburant anormalement
+# grandes, surchauffe). None = pas de borne de ce côté. Un paramètre absent
+# de cette table n'est jamais coloré, plutôt que d'inventer un seuil.
+SEUILS_ALERTE: Dict[str, Tuple[Optional[float], Optional[float]]] = {
+    "COOLANT_TEMP": (None, 110.0),
+    "OIL_TEMP": (None, 130.0),
+    "CONTROL_MODULE_VOLTAGE": (11.0, 15.5),
+    "SHORT_FUEL_TRIM_1": (-25.0, 25.0),
+    "LONG_FUEL_TRIM_1": (-25.0, 25.0),
+    "SHORT_FUEL_TRIM_2": (-25.0, 25.0),
+    "LONG_FUEL_TRIM_2": (-25.0, 25.0),
+    "EGR_ERROR": (-25.0, 25.0),
+}
+
+
+def valeur_anormale(nom_commande: str, valeur: Optional[float]) -> bool:
+    bornes = SEUILS_ALERTE.get(nom_commande)
+    if bornes is None or valeur is None or not isinstance(valeur, (int, float)):
+        return False
+    bas, haut = bornes
+    if bas is not None and valeur < bas:
+        return True
+    if haut is not None and valeur > haut:
+        return True
+    return False
+
+
+# PID standard SAE J1979 liés à l'entretien — pas un intervalle de révision
+# (vidange, etc.), qui n'est jamais exposé génériquement en OBD-II standard
+# (propriétaire au constructeur, affiché seulement sur le combiné
+# d'instruments) : ceci indique depuis quand/combien les codes défaut ont
+# été effacés pour la dernière fois, ce qui est standardisé.
+PIDS_ENTRETIEN: List[Tuple[str, str]] = [
+    ("DISTANCE_SINCE_DTC_CLEAR", "Distance depuis effacement des codes"),
+    ("TIME_SINCE_DTC_CLEARED", "Temps depuis effacement des codes"),
+    ("WARMUPS_SINCE_DTC_CLEAR", "Cycles moteur depuis effacement des codes"),
+    ("DISTANCE_W_MIL", "Distance parcourue avec voyant moteur allumé"),
+    ("RUN_TIME_MIL", "Temps moteur avec voyant allumé"),
+]
+
+INTERVALLE_RAFRAICHISSEMENT_S = 1.0
+
+
+def _lire_valeur_securisee(obd2, commande: str):
+    try:
+        return obd2.live_value(commande)
+    except Exception:  # noqa: BLE001 - matériel externe, une lecture ratée ne doit pas interrompre l'affichage
+        return None
+
+
+def boucle_lecture_temps_reel(obd2, commandes: List[Tuple[str, str]], intervalle_s: float = INTERVALLE_RAFRAICHISSEMENT_S) -> None:
+    """Affichage continu (rafraîchi toutes les `intervalle_s` secondes) des
+    valeurs demandées, en rouge quand elles sortent des seuils indicatifs de
+    SEUILS_ALERTE. Une touche quelconque revient au menu."""
+    fd = sys.stdin.fileno()
+    reglages = termios.tcgetattr(fd)
+    tty.setcbreak(fd)
+    try:
+        while True:
+            if effects.touche_en_attente():
+                return
+
+            lignes = boite_titre("LECTURE TEMPS REEL", MAGENTA, CYAN) + [""]
+            for nom, label in commandes:
+                brute = _lire_valeur_securisee(obd2, nom)
+                texte = format_live_value(brute)
+                nombre = valeur_numerique(brute)
+                couleur = RED if valeur_anormale(nom, nombre) else GREEN
+                lignes.append(f"{label[:44]:<44}{couleur}{texte}{RESET}")
+            lignes.append("")
+            lignes.append(
+                YELLOW
+                + f"Rafraîchi toutes les {intervalle_s:g}s — appuyez sur une touche pour revenir au menu."
+                + RESET
+            )
+            afficher_bloc_centre(lignes)
+            time.sleep(intervalle_s)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, reglages)
