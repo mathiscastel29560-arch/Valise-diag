@@ -26,13 +26,22 @@ class Obd2Client:
     def __init__(self, port: str, baudrate: int = 38400, protocole: str = "AUTO"):
         import logging
 
-        import obd
-
         # python-obd (et pint, qu'il charge) écrivent leurs propres messages
         # directement sur la console — bruyant et redondant avec nos propres
         # messages d'erreur affichés dans le menu (voir transport.py/cli.py).
-        logging.getLogger("obd").setLevel(logging.CRITICAL)
+        # Deux pièges différents selon le logger :
+        # - pint émet ses avertissements ("Redefining 'percent'"...) dès
+        #   `import obd` (construction de son registre d'unités) : il faut
+        #   donc le baisser AVANT l'import, sinon le message part avant que
+        #   ce code ne s'exécute.
+        # - "obd" fait l'inverse : son propre __init__.py remet son logger à
+        #   WARNING pendant l'import, ce qui écraserait un réglage fait avant
+        #   — il faut donc le baisser APRÈS l'import.
         logging.getLogger("pint").setLevel(logging.CRITICAL)
+
+        import obd
+
+        logging.getLogger("obd").setLevel(logging.CRITICAL)
 
         # "AUTO" laisse python-obd négocier lui-même (ATSP0) ; un code ATSP
         # explicite ("6", "3", ...) contourne l'auto-négociation, utile avec
