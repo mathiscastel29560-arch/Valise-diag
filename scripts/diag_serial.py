@@ -7,40 +7,40 @@ répond rien/du charabia -> mauvais port/débit/câble) ou du véhicule (0100
 répond "NO DATA"/"UNABLE TO CONNECT" -> la voiture ne dialogue pas, même si
 l'adaptateur va bien).
 
+La même vérification est aussi disponible dans le menu (Diagnostic >
+Diagnostic bas niveau adaptateur) une fois que le code est à jour sur le
+Pi — ce script existe pour pouvoir la lancer sans même avoir fait
+`git pull` au préalable.
+
 Usage :
     python3 scripts/diag_serial.py [port] [baudrate]
 
 Par défaut : /dev/ttyUSB0 à 38400 bauds.
 """
 import sys
-import time
+from pathlib import Path
 
-import serial
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from valise_diag.elm327 import diagnostiquer_port  # noqa: E402
 
 port = sys.argv[1] if len(sys.argv) > 1 else "/dev/ttyUSB0"
 baudrate = int(sys.argv[2]) if len(sys.argv) > 2 else 38400
 
-
-def envoyer(ser: serial.Serial, commande: str, attente_s: float) -> None:
-    ser.write((commande + "\r").encode())
-    time.sleep(attente_s)
-    reponse = ser.read(500)
-    print(f"{commande} -> {reponse!r}")
-
-
 print(f"Port : {port}  Baudrate : {baudrate}")
-try:
-    ser = serial.Serial(port, baudrate, timeout=2)
-except Exception as exc:
-    print(f"Impossible d'ouvrir le port : {exc}")
+resultat = diagnostiquer_port(port, baudrate)
+
+if resultat.erreur_ouverture:
+    print(f"Impossible d'ouvrir le port : {resultat.erreur_ouverture}")
     sys.exit(1)
 
-envoyer(ser, "ATZ", 1.0)
-envoyer(ser, "ATSP0", 0.5)
-envoyer(ser, "0100", 2.0)
-ser.close()
-
+print(f"ATZ   -> {resultat.reponse_atz!r}")
+print(f"ATSP0 -> {resultat.reponse_atsp0!r}")
+print(f"0100  -> {resultat.reponse_0100!r}")
 print()
-print("ATZ vide/charabia      -> problème adaptateur/câble/débit (pas la voiture)")
-print("0100 = NO DATA / UNABLE TO CONNECT -> adaptateur OK, la voiture ne répond pas")
-print("0100 = suite d'octets hexa          -> tout va bien à ce niveau")
+if not resultat.adaptateur_repond:
+    print("-> L'adaptateur ne répond pas : problème port/débit/câble, pas la voiture.")
+elif not resultat.vehicule_repond:
+    print("-> Adaptateur OK, mais le véhicule ne répond pas (contact mis ? câble bien enfoncé ?).")
+else:
+    print("-> Adaptateur et véhicule répondent correctement.")

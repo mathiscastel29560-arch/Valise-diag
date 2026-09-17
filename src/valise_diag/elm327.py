@@ -90,3 +90,54 @@ class ELM327Serial:
         if lines and lines[0].upper().replace(" ", "") == "?":
             raise ELM327Error("Adapter did not understand the command")
         return lines
+
+
+@dataclass
+class DiagnosticAdaptateur:
+    """Résultat d'un sondage AT brut du port série (voir diagnostiquer_port) —
+    volontairement séparé de ELM327Serial, qui lève une exception si le
+    prompt ">" n'arrive jamais : ici on veut justement pouvoir observer une
+    absence de réponse plutôt que la transformer en erreur."""
+
+    port: str
+    baudrate: int
+    reponse_atz: str = ""
+    reponse_atsp0: str = ""
+    reponse_0100: str = ""
+    erreur_ouverture: Optional[str] = None
+
+    @property
+    def adaptateur_repond(self) -> bool:
+        return bool(self.reponse_atz.strip())
+
+    @property
+    def vehicule_repond(self) -> bool:
+        reponse = self.reponse_0100.upper()
+        if not reponse.strip():
+            return False
+        return not any(mot in reponse for mot in ("NO DATA", "UNABLE TO CONNECT", "ERROR", "?"))
+
+
+def diagnostiquer_port(port: str, baudrate: int = 38400, timeout_s: float = 2.0) -> DiagnosticAdaptateur:
+    """Envoie ATZ / ATSP0 / 0100 directement sur le port, sans négociation de
+    protocole ni interprétation — pour distinguer un adaptateur qui ne
+    répond pas du tout (port/débit/câble) d'un véhicule qui ne répond pas
+    malgré un adaptateur fonctionnel."""
+    try:
+        ser = serial.Serial(port, baudrate, timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 - matériel externe, on veut le message tel quel
+        return DiagnosticAdaptateur(port=port, baudrate=baudrate, erreur_ouverture=str(exc))
+
+    def envoyer(commande: str, attente_s: float) -> str:
+        ser.write((commande + "\r").encode("ascii"))
+        time.sleep(attente_s)
+        return ser.read(500).decode(errors="replace")
+
+    try:
+        atz = envoyer("ATZ", 1.0)
+        atsp0 = envoyer("ATSP0", 0.5)
+        pid0100 = envoyer("0100", 2.0)
+    finally:
+        ser.close()
+
+    return DiagnosticAdaptateur(port=port, baudrate=baudrate, reponse_atz=atz, reponse_atsp0=atsp0, reponse_0100=pid0100)

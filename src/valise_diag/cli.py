@@ -35,6 +35,7 @@ from .boot import show_boot_screen
 from .coding_doc import afficher_doc_codage
 from .config import AppConfig, INTERFACES, POLICES, VEILLE_TYPES, VehicleProfile, save_app_config
 from .dtc import Obd2Client, format_live_value
+from .elm327 import diagnostiquer_port
 from .kwp1281 import KWP1281Client
 from .kwp2000 import SID_CLEAR_DIAGNOSTIC_INFORMATION, SID_READ_DTC_BY_STATUS
 from .parameters import ParameterController, ParameterError
@@ -298,7 +299,8 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             GREEN + " [6] " + RESET + "Historique des actions",
             GREEN + " [7] " + RESET + "Enregistrer une session (CSV)",
             GREEN + " [8] " + RESET + "Reconnecter l'adaptateur",
-            YELLOW + " [9] " + RESET + "Retour",
+            GREEN + " [9] " + RESET + "Diagnostic bas niveau adaptateur",
+            YELLOW + " [10] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -321,6 +323,8 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             elif choice == "8":
                 _handle_reconnexion(ctx)
             elif choice == "9":
+                _handle_diagnostic_bas_niveau(ctx)
+            elif choice == "10":
                 return
             else:
                 print(RED + "Choix invalide." + RESET)
@@ -331,16 +335,16 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
 
 
 def _verifier_connexion_vehicule(obd2: Obd2Client) -> bool:
-    """L'adaptateur peut être détecté (port série ouvert) sans que le
-    véhicule ne réponde pour autant — sinon "aucun code défaut" ou une valeur
+    """Le port série peut s'ouvrir sans que l'adaptateur ni le véhicule ne
+    répondent pour autant — sinon "aucun code défaut" ou une valeur
     "non disponible" ressemblent à un résultat normal alors qu'il n'y a tout
     simplement pas eu de dialogue avec l'ECU."""
     if obd2.is_connected():
         return True
-    print(RED + "Aucune réponse du véhicule (adaptateur détecté, mais pas de dialogue établi)." + RESET)
-    print("Vérifiez : le contact est mis (pas besoin de démarrer le moteur), l'adaptateur")
-    print("est bien enfoncé dans la prise OBD, puis utilisez Diagnostic > Reconnecter")
-    print("l'adaptateur (la connexion n'est tentée qu'une fois, au démarrage de l'appli).")
+    print(RED + "Aucun dialogue établi avec le véhicule." + RESET)
+    print("Vérifiez le contact et le branchement, puis utilisez Diagnostic >")
+    print("Diagnostic bas niveau adaptateur pour savoir si le problème vient de")
+    print("l'adaptateur lui-même ou du véhicule (Reconnecter l'adaptateur ensuite).")
     input("\nAppuyez sur Entrée pour continuer...")
     return False
 
@@ -363,7 +367,46 @@ def _handle_reconnexion(ctx: _MenuContext) -> None:
     if ctx.obd2.is_connected():
         print(GREEN + "Connexion au véhicule établie." + RESET)
     else:
-        print(YELLOW + "Adaptateur détecté mais le véhicule ne répond toujours pas (contact mis ?)." + RESET)
+        print(YELLOW + "Toujours aucun dialogue avec le véhicule — essayez "
+              "'Diagnostic bas niveau adaptateur' pour en savoir plus." + RESET)
+    input("\nAppuyez sur Entrée pour continuer...")
+
+
+def _handle_diagnostic_bas_niveau(ctx: _MenuContext) -> None:
+    """Sonde le port série directement (AT brut), sans passer par python-obd,
+    pour distinguer un adaptateur qui ne répond pas du tout d'un véhicule qui
+    ne répond pas malgré un adaptateur fonctionnel."""
+    if ctx.app_config.interface != "obd2":
+        print("Disponible uniquement sur l'interface OBD2 (adaptateur ELM327).")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    # Libère le port avant de le sonder directement : ctx.obd2 (python-obd)
+    # le garde ouvert, et deux connexions simultanées sur le même port
+    # brouilleraient les réponses des deux côtés.
+    if ctx.obd2 is not None:
+        ctx.obd2.close()
+        ctx.obd2 = None
+
+    print(CYAN + f"Sondage direct de {ctx.app_config.port} (sans passer par l'appli)..." + RESET)
+    resultat = diagnostiquer_port(ctx.app_config.port, ctx.app_config.baudrate)
+
+    if resultat.erreur_ouverture:
+        print(RED + f"Impossible d'ouvrir le port : {resultat.erreur_ouverture}" + RESET)
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    print(f"ATZ   -> {resultat.reponse_atz.strip() or '(vide)'}")
+    print(f"ATSP0 -> {resultat.reponse_atsp0.strip() or '(vide)'}")
+    print(f"0100  -> {resultat.reponse_0100.strip() or '(vide)'}")
+    print()
+    if not resultat.adaptateur_repond:
+        print(RED + "L'adaptateur ne répond pas : vérifiez le port, le débit (baudrate) et le câble." + RESET)
+    elif not resultat.vehicule_repond:
+        print(YELLOW + "Adaptateur OK, mais le véhicule ne répond pas (contact mis ? câble bien enfoncé ?)." + RESET)
+    else:
+        print(GREEN + "Adaptateur et véhicule répondent correctement." + RESET)
+    print(CYAN + "\nUtilisez 'Reconnecter l'adaptateur' ensuite pour rétablir la connexion normale." + RESET)
     input("\nAppuyez sur Entrée pour continuer...")
 
 
