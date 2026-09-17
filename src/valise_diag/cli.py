@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from . import (
+    consommation,
     dtc_fr,
     easter_eggs,
     file_manager,
@@ -27,8 +28,10 @@ from . import (
     netscan,
     pin_lock,
     profiles,
+    readiness,
     screensaver,
     session_log,
+    session_replay,
     system_status,
     system_tools,
     vehicle_id,
@@ -39,7 +42,7 @@ from .coding_doc import afficher_doc_codage
 from .config import AppConfig, INTERFACES, POLICES, VEILLE_TYPES, VehicleProfile, save_app_config
 from .dtc import Obd2Client, format_live_value
 from .elm327 import PROTOCOLES_TESTABLES, diagnostiquer_port, diagnostiquer_protocoles
-from .graphs import boucle_graphiques
+from .graphs import boucle_graphiques, dessiner_courbe
 from .kwp1281 import KWP1281Client
 from .kwp2000 import SID_CLEAR_DIAGNOSTIC_INFORMATION, SID_READ_DTC_BY_STATUS
 from .parameters import ParameterController, ParameterError
@@ -304,15 +307,19 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             GREEN + " [2] " + RESET + "Effacer les codes défauts",
             GREEN + " [3] " + RESET + "Lecture temps réel",
             GREEN + " [4] " + RESET + "Graphiques temps réel",
-            GREEN + " [5] " + RESET + "Tester un actionneur",
-            GREEN + " [6] " + RESET + "Identification ECU",
-            GREEN + " [7] " + RESET + "Détection véhicule (marque + logo)",
-            GREEN + " [8] " + RESET + "Entretien (depuis effacement codes)",
-            GREEN + " [9] " + RESET + "Historique des actions",
-            GREEN + " [10] " + RESET + "Enregistrer une session (CSV)",
-            GREEN + " [11] " + RESET + "Reconnecter l'adaptateur",
-            GREEN + " [12] " + RESET + "Diagnostic bas niveau adaptateur",
-            YELLOW + " [13] " + RESET + "Retour",
+            GREEN + " [5] " + RESET + "Consommation instantanée (L/100km)",
+            GREEN + " [6] " + RESET + "Tester un actionneur",
+            GREEN + " [7] " + RESET + "Identification ECU",
+            GREEN + " [8] " + RESET + "Détection véhicule (marque + logo)",
+            GREEN + " [9] " + RESET + "Entretien (depuis effacement codes)",
+            GREEN + " [10] " + RESET + "Contrôle technique (monitorings antipollution)",
+            GREEN + " [11] " + RESET + "Historique des actions",
+            GREEN + " [12] " + RESET + "Enregistrer une session (CSV)",
+            GREEN + " [13] " + RESET + "Rejouer une session CSV",
+            GREEN + " [14] " + RESET + "Comparer deux sessions CSV",
+            GREEN + " [15] " + RESET + "Reconnecter l'adaptateur",
+            GREEN + " [16] " + RESET + "Diagnostic bas niveau adaptateur",
+            YELLOW + " [17] " + RESET + "Retour",
             "",
         ]
         afficher_bloc_centre(lignes)
@@ -327,22 +334,30 @@ def _menu_diagnostic(ctx: _MenuContext) -> None:
             elif choice == "4":
                 _handle_graphiques(ctx)
             elif choice == "5":
-                _handle_actuator(ctx)
+                _handle_consommation(ctx)
             elif choice == "6":
-                _handle_identification(ctx)
+                _handle_actuator(ctx)
             elif choice == "7":
-                _handle_detection_vehicule(ctx)
+                _handle_identification(ctx)
             elif choice == "8":
-                _handle_entretien(ctx)
+                _handle_detection_vehicule(ctx)
             elif choice == "9":
-                _handle_history()
+                _handle_entretien(ctx)
             elif choice == "10":
-                _handle_session_log(ctx)
+                _handle_controle_technique(ctx)
             elif choice == "11":
-                _handle_reconnexion(ctx)
+                _handle_history()
             elif choice == "12":
-                _handle_diagnostic_bas_niveau(ctx)
+                _handle_session_log(ctx)
             elif choice == "13":
+                _handle_rejouer_session(ctx)
+            elif choice == "14":
+                _handle_comparer_sessions(ctx)
+            elif choice == "15":
+                _handle_reconnexion(ctx)
+            elif choice == "16":
+                _handle_diagnostic_bas_niveau(ctx)
+            elif choice == "17":
                 return
             else:
                 print(RED + "Choix invalide." + RESET)
@@ -585,6 +600,20 @@ def _handle_graphiques(ctx: _MenuContext) -> None:
     boucle_graphiques(ctx.obd2)
 
 
+def _handle_consommation(ctx: _MenuContext) -> None:
+    if ctx.app_config.interface != "obd2":
+        print("Disponible uniquement sur l'interface OBD2.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if ctx.obd2 is None:
+        print("Non disponible en mode simulation.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if not _verifier_connexion_vehicule(ctx.obd2):
+        return
+    consommation.boucle_consommation(ctx.obd2)
+
+
 def _handle_actuator(ctx: _MenuContext) -> None:
     name = input("Nom de l'actionneur : ").strip()
     if ctx.app_config.interface == "kkl":
@@ -640,6 +669,43 @@ def _handle_entretien(ctx: _MenuContext) -> None:
     print(YELLOW + "L'intervalle d'entretien (vidange, révision...) n'est pas un PID OBD-II" + RESET)
     print(YELLOW + "standard : il n'est pas exposé génériquement, contrairement aux valeurs" + RESET)
     print(YELLOW + "ci-dessus, qui elles le sont (norme SAE J1979)." + RESET)
+    input("\nAppuyez sur Entrée pour continuer...")
+
+
+def _handle_controle_technique(ctx: _MenuContext) -> None:
+    if ctx.app_config.interface != "obd2" or ctx.obd2 is None:
+        print("Disponible uniquement sur l'interface OBD2, hors mode simulation.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    if not _verifier_connexion_vehicule(ctx.obd2):
+        return
+    etat = readiness.lire_etat(ctx.obd2)
+    if etat is None:
+        print(RED + "Le véhicule n'a pas répondu au PID de statut (0101)." + RESET)
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    print(BOLD + "=== ÉTAT AVANT CONTRÔLE TECHNIQUE ===" + RESET)
+    couleur_mil = RED if etat.voyant_moteur_allume else GREEN
+    print(f"Voyant moteur (MIL)  : {couleur_mil}{'ALLUMÉ' if etat.voyant_moteur_allume else 'éteint'}{RESET}")
+    print(f"Codes défaut actifs  : {etat.nombre_codes_actifs}")
+    print(f"Type d'allumage      : {etat.type_allumage}")
+    print()
+    print(BOLD + "Monitorings antipollution :" + RESET)
+    for nom, disponible, complet in etat.monitorings:
+        if not disponible:
+            print(f"  {nom:<38} non applicable à ce moteur")
+            continue
+        couleur = GREEN if complet else RED
+        statut = "complet" if complet else "incomplet"
+        print(f"  {nom:<38} {couleur}{statut}{RESET}")
+    print()
+    if readiness.pret_pour_controle(etat):
+        print(GREEN + "Tous les monitorings applicables sont complets et le voyant est éteint." + RESET)
+    else:
+        print(YELLOW + "Au moins un point n'est pas prêt — voir le détail ci-dessus." + RESET)
+    print(YELLOW + "Ceci reflète l'état de l'ECU (norme SAE J1979), pas une garantie de" + RESET)
+    print(YELLOW + "résultat au contrôle technique." + RESET)
     input("\nAppuyez sur Entrée pour continuer...")
 
 
@@ -710,6 +776,110 @@ def _handle_session_log(ctx: _MenuContext) -> None:
     print(GREEN + f"Session enregistrée dans {chemin}" + RESET)
     history.log_event(f"Session CSV enregistrée : {chemin}")
     input("\nAppuyez sur Entrée pour continuer...")
+
+
+def _choisir_fichier_session(fichiers: List[Tuple[Path, int, float]], message: str) -> Optional[Path]:
+    print(message)
+    for i, (chemin, taille, mtime) in enumerate(fichiers, start=1):
+        date = time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime))
+        print(f"  [{i}] {chemin.name} ({file_manager.formater_taille(taille)}, {date})")
+    choix = input(GREEN + "> " + RESET).strip()
+    if choix.isdigit() and 1 <= int(choix) <= len(fichiers):
+        return fichiers[int(choix) - 1][0]
+    return None
+
+
+def _handle_rejouer_session(ctx: _MenuContext) -> None:
+    fichiers = file_manager.lister(session_log.DOSSIER_LOGS)
+    if not fichiers:
+        print("Aucune session CSV enregistrée pour l'instant.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    chemin = _choisir_fichier_session(fichiers, "Quelle session rejouer ?")
+    if chemin is None:
+        print(RED + "Choix invalide." + RESET)
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    entetes, colonnes = session_replay.lire_csv(chemin)
+    if not entetes:
+        print("Fichier vide ou illisible.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    while True:
+        lignes = boite_titre(chemin.name[:38], MAGENTA, CYAN) + [""]
+        for i, nom in enumerate(entetes, start=1):
+            lignes.append(f" [{i}] {nom}")
+        lignes.append(YELLOW + f" [{len(entetes) + 1}] " + RESET + "Retour")
+        lignes.append("")
+        afficher_bloc_centre(lignes)
+        choix = input(GREEN + "> " + RESET).strip()
+        if choix == str(len(entetes) + 1):
+            return
+        if not (choix.isdigit() and 1 <= int(choix) <= len(entetes)):
+            print(RED + "Choix invalide." + RESET)
+            input("Appuyez sur Entrée pour continuer...")
+            continue
+
+        nom_colonne = entetes[int(choix) - 1]
+        valeurs = colonnes[nom_colonne]
+        stats = session_replay.statistiques(valeurs)
+        clear_screen()
+        print(BOLD + f"=== {nom_colonne} — {chemin.name} ===" + RESET)
+        if stats is None:
+            print("Aucune valeur exploitable dans cette colonne.")
+        else:
+            vmin, vmax, moyenne = stats
+            echantillon = session_replay.echantillonner(valeurs, 60)
+            for ligne_courbe in dessiner_courbe(echantillon, hauteur=9):
+                print(GREEN + ligne_courbe + RESET)
+            print()
+            print(f"Min : {vmin:.3g}   Max : {vmax:.3g}   Moyenne : {moyenne:.3g}   Points : {len(valeurs)}")
+        input("\nAppuyez sur Entrée pour continuer...")
+
+
+def _handle_comparer_sessions(ctx: _MenuContext) -> None:
+    fichiers = file_manager.lister(session_log.DOSSIER_LOGS)
+    if len(fichiers) < 2:
+        print("Il faut au moins deux sessions CSV enregistrées pour comparer.")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    chemin_a = _choisir_fichier_session(fichiers, "Première session ('avant') :")
+    if chemin_a is None:
+        print(RED + "Choix invalide." + RESET)
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+    chemin_b = _choisir_fichier_session(fichiers, "Deuxième session ('après') :")
+    if chemin_b is None:
+        print(RED + "Choix invalide." + RESET)
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    entetes_a, colonnes_a = session_replay.lire_csv(chemin_a)
+    entetes_b, colonnes_b = session_replay.lire_csv(chemin_b)
+    communes = session_replay.colonnes_communes(entetes_a, entetes_b)
+    if not communes:
+        print("Aucune colonne commune entre ces deux sessions (paramètres enregistrés différents).")
+        input("\nAppuyez sur Entrée pour continuer...")
+        return
+
+    clear_screen()
+    print(BOLD + f"=== {chemin_a.name}  vs  {chemin_b.name} ===" + RESET)
+    print()
+    for nom in communes:
+        stats_a = session_replay.statistiques(colonnes_a[nom])
+        stats_b = session_replay.statistiques(colonnes_b[nom])
+        print(BOLD + nom + RESET)
+        print(f"  avant  : min {stats_a[0]:.3g}  max {stats_a[1]:.3g}  moyenne {stats_a[2]:.3g}" if stats_a else "  avant  : aucune valeur")
+        print(f"  après  : min {stats_b[0]:.3g}  max {stats_b[1]:.3g}  moyenne {stats_b[2]:.3g}" if stats_b else "  après  : aucune valeur")
+        if stats_a and stats_b:
+            delta = stats_b[2] - stats_a[2]
+            print(f"  écart moyenne : {'+' if delta >= 0 else ''}{delta:.3g}")
+        print()
+    input("Appuyez sur Entrée pour continuer...")
 
 
 # --------------------------------------------------------------------------
