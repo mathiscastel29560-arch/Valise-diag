@@ -35,3 +35,21 @@ def test_mettre_a_jour_valise_hors_depot_git_echoue_proprement(tmp_path, monkeyp
 
     assert succes is False
     assert sortie != ""
+
+
+def test_est_raspberry_pi_detecte_le_modele(tmp_path, monkeypatch):
+    system_tools.est_raspberry_pi.cache_clear()
+    fichier = tmp_path / "model"
+    fichier.write_text("Raspberry Pi Zero W Rev 1.1\x00")
+    monkeypatch.setattr(system_tools, "Path", lambda _chemin: fichier)
+
+    assert system_tools.est_raspberry_pi() is True
+    system_tools.est_raspberry_pi.cache_clear()
+
+
+def test_est_raspberry_pi_faux_sur_pc_classique(tmp_path, monkeypatch):
+    system_tools.est_raspberry_pi.cache_clear()
+    monkeypatch.setattr(system_tools, "Path", lambda _chemin: tmp_path / "absent")
+
+    assert system_tools.est_raspberry_pi() is False
+    system_tools.est_raspberry_pi.cache_clear()

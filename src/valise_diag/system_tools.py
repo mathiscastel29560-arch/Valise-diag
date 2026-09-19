@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 from typing import Tuple
 
@@ -14,6 +15,22 @@ from .config import POLICES
 from .theme import GREEN, RESET
 
 AUTOSTART_DISABLE_FILE = Path.home() / ".autostart_disabled"
+
+
+@lru_cache(maxsize=1)
+def est_raspberry_pi() -> bool:
+    """La valise tourne aussi sur un PC Linux classique (voir
+    scripts/deploy_pc.sh) : distinguer les deux évite d'afficher "Éteindre
+    le Pi" — et de risquer un clic malheureux qui éteint le PC de
+    quelqu'un — sur une machine qui n'en est pas un.
+
+    Le résultat ne change jamais en cours d'exécution (c'est une question de
+    matériel) : mis en cache pour ne pas relire ce fichier à chaque
+    rafraîchissement du tableau de bord (~1x/s)."""
+    try:
+        return "raspberry pi" in Path("/proc/device-tree/model").read_text(errors="ignore").lower()
+    except OSError:
+        return False
 
 
 def ouvrir_shell() -> None:

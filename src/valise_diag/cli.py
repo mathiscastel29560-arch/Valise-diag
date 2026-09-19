@@ -196,7 +196,7 @@ def _afficher_dashboard(ctx: _MenuContext) -> None:
         GREEN + " [4] " + RESET + "Système",
         GREEN + " [5] " + RESET + "Paramètres",
         GREEN + " [6] " + RESET + "Jeux",
-        RED + " [7] " + RESET + "Éteindre le Pi",
+        RED + " [7] " + RESET + ("Éteindre le Pi" if system_tools.est_raspberry_pi() else "Éteindre le PC"),
         YELLOW + " [8] " + RESET + "Quitter le menu",
         "",
         CYAN + f"{profile.make} {profile.model} {profile.year}" + RESET,
